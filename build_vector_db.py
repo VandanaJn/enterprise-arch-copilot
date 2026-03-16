@@ -59,7 +59,20 @@ def build_vector_database():
     final_chunks = max_size_fallback_splitter.split_documents(semantic_chunks)
     print(f"After enforcing max size limit, we have {len(final_chunks)} final chunk(s).")
 
-    # 4. Load into Chroma Vector Database
+    # 4. Enhance Metadata for Hybrid Filtering
+    print("Injecting explicit metadata tags...")
+    for chunk in final_chunks:
+        # The source looks like 'docs\\adrs\\001-use-kafka-for-events.md'
+        # We check the directory name to assign a high-level tag.
+        source_path = chunk.metadata.get("source", "").lower()
+        if "runbooks" in source_path:
+            chunk.metadata["document_type"] = "runbook"
+        elif "adrs" in source_path:
+            chunk.metadata["document_type"] = "adr"
+        else:
+            chunk.metadata["document_type"] = "unknown"
+
+    # 5. Load into Chroma Vector Database
     print("Building Chroma DB...")
     
     # Create the vector store. This will parse the chunks, send them to OpenAI to get vectorized,
