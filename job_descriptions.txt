@@ -1,0 +1,554 @@
+Job descriptions for staff SE role:
+FINRA
+Lead Full-Stack 
+GenAI
+ Platform Software Engineer
+ 
+About the job
+The Lead Full-Stack 
+GenAI
+ Platform Software Engineer works independently and owns development of robust, scalable software solutions across the full stack, including backend APIs, frontend interfaces, and cloud infrastructure. This role is central to architecting and implementing a cutting-edge generative AI regulatory chat assistant. The Lead Software Engineer improves overall product quality throughout the software development lifecycle, guides team members in best practices and technical leadership, and helps identify and mitigate architectural risks. This position reports directly to a 
+Director
+ or Senior Director.
+Key Responsibilities: Architectural Leadership & Design 
+Design and develop industry-leading solutions that meet defined quality standards, reliability specifications, and strategic objectives 
+Lead the architecture of robust, scalable software solutions across the full stack, with strong focus on both backend services (
+FastAPI
+, Python) and frontend UI/UX (
+VueJS
+) 
+Assist with architecting and developing cloud-native solutions leveraging AWS services, including Bedrock, S3, 
+Fargate
+, Aurora, Lambda, Step Functions, and emerging technologies 
+Collaborate on system architecture decisions and API design, ensuring secure, performant, and maintainable patterns 
+Demonstrate solid understanding of systems and processes within the job area and recommend improvements 
+Engineering Excellence & Quality 
+Design and implement high-performance, secure APIs using 
+FastAPI
+ and Python, establishing patterns that the team replicates 
+Guide the team in industry-leading practices for software development, code quality, system design, and test automation 
+Excellent understanding of computer science fundamentals, including algorithm design, problem solving, complexity analysis and data structures 
+Lead implementation of comprehensive test strategies, including unit testing, integration testing, and end-to-end testing methodologies; champion test-driven development (TDD) practices and automated testing frameworks 
+DevOps & Infrastructure 
+Assist with implementing and maintaining CI/CD pipelines, fostering a strong DevOps culture within the team 
+Help identify gaps between system components and designs and delivers solutions that enable team autonomy 
+Take broad perspective to infrastructure problems and exercises independent judgment in selecting techniques and evaluation criteria to obtain results 
+Develop actionable insights from analyzing software development trends and software engineering best practices, communicating integration recommendations to management 
+Mentorship & Cultural Leadership 
+Mentor and guide less experienced team members in techniques, processes, and best practices for full-stack development, API design, and system architecture 
+Coach and train colleagues in how to write clean, maintainable, secure code and how to think systemically about software design 
+Champion collaborative resolution of defects and lead or co-lead internal process improvement initiatives 
+Provide feedback on processes by offering suggestions in line with FINRA's values of collaboration, expertise, innovation, and responsibility 
+Product & Stakeholder Collaboration 
+Work on complex features requiring strong knowledge of generative AI industry practices 
+Partner within and across teams meet shared goals and priorities 
+Openly share progress and priorities with key stakeholders, communicating complex or technical information at the right level 
+Contribute proactively to the full product development lifecycle, from ideation through deployment 
+Generative AI & Emerging Technologies 
+Develop and refine the system's integration with large language models (LLMs) and generative AI technologies as they evolve 
+Design secure patterns for handling sensitive data within AI-powered workflows, ensuring compliance with regulatory requirements 
+Identify innovative applications of AI/LLM capabilities to improve system functionality and user experience 
+Stays informed of advances in LLM technologies, frameworks (e.g., Google ADK), and optimization approaches 
+Security & Compliance 
+Ensure all work products meet or exceed FINRA and team standards for secure development practices 
+Assist with adherence to technology policies and comply with all security controls 
+Lead secure coding practices and threat modeling for API and infrastructure components 
+Ensure secure handling of personally identifiable information (PII) and sensitive regulatory data throughout the development lifecycle 
+Education/Experience Requirements:
+Bachelor’s degree in Computer Science, Information Systems or related discipline with at least 7 years of related experience, or equivalent training and/or work experience.
+Strong system design experience
+Strong experience in object-oriented development
+Strong experience with cloud technologies
+Strong experience in data storage technologies
+Strong experience in performance tuning and optimization
+Strong experience in DevOps and CI\CD technologies
+Strong experience test automation and unit testing
+Strong experience software security 
+Staff Software Engineer, Enterprise Integration
+ 
+$167.2K/yr - $209K/yr
+Full-time
+Hi — We’re 
+AppFolio
+. We’re innovators, changemakers, and collaborators. We’re more than just a software company — we’re pioneers in cloud and AI, delivering magical experiences that make our customers’ lives easier. We’re transforming how people do business in real estate, and we’re looking for engineers who want to design and build systems that scale with the business.
+We’re seeking a Staff Software Engineer, Enterprise Integration to help design and build the core integration and API platforms that connect AppFolio’s products, data, and enterprise systems. This is a hands-on engineering role with significant architectural influence, focused on building robust, scalable, and secure software systems — not just configuring tools.
+This role is ideal for a senior engineer who enjoys solving complex distributed systems and integration problems, writing production-grade code, and shaping long-term platform architecture.
+As a Staff Software Engineer, you will be a senior technical contributor responsible for designing, building, and operating cloud-native integration services and APIs. This is a hands-on software engineering role, focused on writing high-quality code and building distributed systems that integrate AppFolio’s products, data platforms, and enterprise applications.
+You will work closely with product engineering, data, and enterprise teams to deliver API-first and event-driven architectures, with AWS as the primary execution platform.
+Responsibilities 
+Design, build, and operate cloud-native microservices on AWS to support enterprise integrations and APIs.
+Write high-quality, production-grade software in Java, Kotlin, and/or Python, applying proven software engineering patterns and best practices.
+Architect and implement event-driven and asynchronous systems using messaging and streaming platforms (e.g., Kafka or AWS-native equivalents).
+Apply distributed systems and integration patterns (e.g., idempotency, retries, backpressure, eventual consistency) to build resilient services.
+Design API-first services that expose well-defined domain capabilities for product, data, and enterprise consumers.
+Build and operate large-scale data exports and ingestion pipelines, supporting batch and near–real-time use cases.
+Integrate with external SaaS platforms (Salesforce, Zuora Billing/
+RevPro
+, NetSuite, etc.) using custom-built services, APIs, and events.
+Design systems with strong emphasis on observability, fault tolerance, security, and operational excellence.
+Participate in architecture and design reviews, influencing microservices and event-driven architecture standards.
+Design and manage data persistence layers, selecting appropriate database technologies based on access patterns and scale.
+Mentor engineers and elevate practices in system design, code quality, and reliability engineering.
+Drive DevOps best practices including CI/CD, infrastructure as code, and automated testing 
+Must-Have Qualifications 
+Bachelor’s degree in Computer Science or a related field (Master’s preferred).
+8+ years of professional software engineering experience, primarily focused on backend and distributed systems.
+Expert-level proficiency in Java, Kotlin, and/or Python
+Strong experience designing and operating microservices-based architectures in production.
+Deep hands-on experience with event-driven systems and asynchronous processing.
+Strong experience with queuing and messaging systems (e.g., message queues, pub/sub, streaming).
+Strong hands-on experience designing and building AWS-based systems at scale.
+Experience working with relational and NoSQL database technologies, including schema design, data modeling, and performance optimization.
+Solid understanding of software design patterns, integration patterns, and distributed data consistency models.
+Experience designing and operating high-volume data export and ingestion workflows.
+Proven experience delivering complex systems using Agile and modern SDLC practices.
+Strong communication and cross-functional collaboration skills. 
+Preferred Qualifications 
+Experience with Kafka or equivalent streaming platforms.
+Experience with AWS-native messaging and data services (e.g., SNS/SQS, 
+EventBridge
+, streaming, object storage).
+Experience building internal platforms or shared integration frameworks.
+Familiarity with data consistency, reconciliation, and recovery strategies across distributed systems.
+AWS certifications (Solutions Architect, Developer, or equivalent).
+JPMorganChase
+Lead Software Engineer - Payments Data Platform
+ 
+$152K/yr - $215K/yr
+About the job
+Job Description 
+We have an opportunity to impact your career and provide an adventure where you can push the limits of what's possible.
+As a Lead Software Engineer at JPMorgan Chase within the Commercial & Investment Bank – Digital and Platform Services line of business, you are an integral part of an agile team that works to enhance, build, and deliver trusted market-leading technology products in a secure, stable, and scalable way. In this role, you will be a core technical contributor, responsible for conducting critical technology solutions across multiple technical areas within various business functions in support of the firm’s business objectives.
+Job Responsibilities 
+Executes creative software solutions, design, development, and technical troubleshooting with ability to think beyond routine or conventional approaches to build solutions or break down technical problems
+Develops secure high-quality production code, and reviews and debugs code written by others
+Identifies opportunities to eliminate or automate remediation of recurring issues to improve overall operational stability of software applications and systems
+Leads evaluation sessions with external vendors, startups, and internal teams to drive outcomes-oriented probing of architectural designs, technical credentials, and applicability for use within existing systems and information architecture
+Leads communities of practice across Software Engineering to drive awareness and use of new and leading-edge technologies
+Adds to team culture of diversity, opportunity, inclusion, and respect 
+Required Qualifications, Capabilities, And Skills 
+Formal training or certification on software engineering concepts and 5+ years applied experience
+Hands-on practical experience delivering system design, application development, testing, and operational stability
+Hands-on professional experience coding Java applications using Spring Boot
+Practical cloud native experience in AWS, like EKS, DynamoDB, Lambda, 
+Opensearch
+Proficiency in automation and continuous delivery methods
+Proficient in all aspects of the Software Development Life Cycle
+Advanced understanding of agile methodologies such as CI/CD, Application Resiliency, and Security
+Demonstrated proficiency in software applications and technical processes within a technical discipline (e.g., cloud, artificial intelligence, machine learning, mobile, etc.)
+In-depth knowledge of the financial services industry and their IT systems 
+Preferred Qualifications, Capabilities, And Skills 
+Certified AWS Cloud Practitioner, Developer or Solutions Architect strongly preferred
+Proficiency in Core Java, Spring Framework, Python, Spark, Databricks
+PayJoy
+Staff Software Engineer - Finance Engine
+ 
+San Francisco, CA · 1 week ago · 42 people clicked apply
+About 
+PayJoy
+ 
+PayJoy
+ is a mission-first credit provider dedicated to helping under-served customers in emerging markets to achieve financial stability and success. Our patented technology for secured credit provides an on-ramp for new customers to enter the credit system. Through 
+PayJoy’s
+ point-of-sale financing and credit cards, customers gain access to a modern quality of life. 
+PayJoy’s
+ credit also allows our customers to seize opportunities as micro-entrepreneurs, and provide safety acts as insurance for tough times. Through our cutting-edge machine learning, data science, and anti-fraud AI, we have served over 18 million customers as of 2025 while achieving solid profitability for sustainable growth.
+This role 
+The Staff Engineer is responsible for leading our technical foundation, initially collaborating with the Money - Finance Engine teams to drive innovation, with the opportunity to work with other teams as well, taking on a mentoring role, designing scalable systems, and influencing cross-functional initiatives, in a hands-on position where they will make key technical decisions and build critical services.
+Responsibilities 
+Solve Critical Problems: Identify, prioritize, and solve technical challenges impacting growth.
+Lead and Collaborate: Architect new solutions, 
+Implement
+ newer patterns/framework that other candidates can use and implement, Identify potential systemwide solutions, guide teams, ensuring solutions meet business goals and technical standards.
+Mentor & Develop: Foster a culture of learning, guiding junior engineers.
+Innovate & Improve: Drive continuous improvement in our platform and processes. 
+Requirements 
+Bachelor’s degree in a technical discipline such as computer science, software engineering, or a related field. 
+12+ years of experience as Software Engineer, in a fast-paced, high-growth environment, working with cloud platforms such as AWS, GCP, or Azure.
+Strong expertise in 
+fullstack
+ development with proficiency in one or more programming languages such as PHP (strong preference), or similar; as well both relational and NoSQL databases.
+Solid understanding of distributed systems, system design principles.
+A can-do attitude and creative, flexible 
+problem solving
+ abilities, and the ability to think critically in ambiguous situations.
+Being a team player, that includes review, pair programming, collaboration in one task, mentoring or being mentored. 
+Strong written and verbal communication skills, with the ability to present technical concepts to non-technical stakeholders.
+Desirable experience with mobile technologies or mobile payment systems with the fraud and identity aspects of fintech, as well in building and maintaining large-scale systems used by millions of users.
+Ridgeline
+Staff Software Engineer, API Engineering
+ 
+New York, NY · Reposted 1 week ago · 64 people clicked apply
+Promoted by hirer · Responses managed off LinkedIn
+$185K/yr - $220K/yr
+Are you an experienced engineer who thrives on building robust, scalable API platforms that empower developers across an ecosystem? Do you enjoy defining standards that make APIs intuitive, secure, and a delight to consume? Are you excited to leverage cutting-edge AI tools like ChatGPT and Cursor to elevate developer productivity and velocity? If so, we invite you to be a part of our innovative team.
+As a Staff Software Engineer in API Engineering, you will shape the future of Ridgeline’s API platform, driving strategy, architecture, and implementation for mission-critical services. You’ll design and evolve our gateway infrastructure, define and enforce API product standards, and ensure that reliability, security, and usability are at the core of every API. Your leadership will directly impact both internal teams and external customers, empowering them to build on Ridgeline’s cloud-native investment management platform. You’ll work with cutting-edge technologies and AI tools—including ChatGPT, Claude Code, and Cursor—to accelerate development and improve code quality.
+At Ridgeline, how we work matters as much as what we build. 
+Ridgeliners
+ act like owners, choose growth over comfort, and communicate with transparency. We assume positive intent, bias toward action, and bring solutions—not just problems. We celebrate wins, learn from setbacks, and thrive in a resilient, collaborative, high-performing culture. If Ridgeline Way excites you, we’d love to meet you.
+The Impact You Will Have 
+Lead the design and development of a Kong-based API Gateway hosting thousands of highly available, secure, and scalable APIs
+Define and codify API design standards that elevate internal, external, and agentic developer usability
+Identify and eliminate friction in API development through simplification, automation, and tooling that improve developer velocity and experience
+Establish reliability and observability practices to monitor and ensure API performance, availability, and security
+Develop and maintain API documentation using automated 
+OpenAPI
+ spec generation and validation tools
+Participate in API design forums to ensure alignment with Ridgeline’s architecture and developer experience principles
+Write high-quality, well-tested code and provide thoughtful peer reviews that foster growth across the team
+Apply modern engineering practices including CI/CD, infrastructure as code, and test automation
+Leverage AI tools like ChatGPT, Cursor, and Claude Code to accelerate development, improve code quality, and inspire innovative solutions
+Collaborate across teams with transparency, ownership, and resilience, driving outcomes that reflect the Ridgeline Way 
+What We Look For 
+8+ years of software engineering experience, including technical leadership of large-scale platform or product APIs
+Deep expertise with cloud-native distributed systems (AWS preferred), secure RESTful API design, and API management/gateway solutions (Kong or equivalent)
+Proven experience setting API design standards and delivering production-grade APIs documented with 
+OpenAPI
+ spec
+Strong understanding of API reliability, monitoring, and operational best practices
+Familiarity with event-driven architectures, 
+WebSockets
+, and authentication/authorization models for APIs Excellent communication and mentoring skills with an inclusive approach to technical leadership
+Bachelor’s degree in Computer Science or related field
+Creative problem-solving mindset and passion for helping others succeed 
+Bonus 
+Experience contributing to or defining API product strategy
+Hands-on experience with developer productivity tooling for APIs
+Exposure to financial services or investment management domain
+Practical experience with modern AI frameworks that support software development
+FloQast
+Senior Staff Software Engineer, Applications
+ 
+San Francisco, CA · Reposted 2 weeks ago · 25 people clicked apply
+San Jose or LA CA (Hybrid) 
+At 
+FloQast
+, we’re redefining how accounting teams operate through AI-native workflows. Trusted by thousands of global companies, our platform is an operating system for accounting and transforms complex financial processes into fast, reliable, and scalable systems.
+We’re looking for a 
+Senior Staff Software Engineer
+ who doesn’t just build software — but shapes platforms, accelerates teams, and drives step-function impact.
+This is a high-leverage role where your architectural decisions will influence the entire 
+FloQast
+ application ecosystem and directly accelerate innovation across our products.
+What You'll Do Architect and build at scale 
+Design and deliver core platform capabilities powering 
+FloQast
+ applications
+Define system architecture and functional specifications
+Build highly scalable, distributed systems for enterprise customers 
+Set the technical bar 
+Lead complex design discussions and establish engineering best practices
+Drive improvements in reliability, performance, and developer experience
+Own critical technical decisions that shape platform direction 
+Partner to deliver real impact 
+Work closely with Product and Design to shape the roadmap
+Engage directly with customers and stakeholders to understand workflows
+Translate ambiguity into clear, executable technical strategy 
+Multiply the team 
+Mentor senior engineers and elevate technical depth across the org
+Lead through influence, not authority
+Create leverage through reusable platform investments 
+What You'll Bring 
+12+ years building and shipping complex software systems
+Proven track record driving large-scale technical initiatives end-to-end
+History of mentoring and raising the bar for engineering teams 
+Technical depth 
+Strong expertise across modern backend stacks
+Go, Node.js 
+MongoDB and AWS
+Deep experience designing distributed systems at enterprise scale
+Strong API design and platform thinking
+Solid understanding of security and compliance in SaaS environments 
+Mindset 
+Strong product intuition — you balance elegance with business impact
+Comfortable navigating ambiguity and moving from idea → production
+Customer-obsessed and outcome-driven 
+Bonus points 
+Fintech, accounting, or enterprise SaaS experience
+Familiarity with ERP or accounting workflows
+Background in workflow automation platforms
+PayPal
+Staff Software Engineer
+ 
+The Company 
+PayPal has been revolutionizing commerce globally for more than 25 years. Creating innovative experiences that make moving money, selling, and shopping simple, personalized, and secure, PayPal empowers consumers and businesses in approximately 
+200 markets to join and thrive in the global economy.
+We operate a global, two-sided network at scale that connects hundreds of millions of merchants and consumers. We help merchants and consumers connect, transact, and complete payments, whether they are online or in person. PayPal is more than a connection to third-party payment networks. We provide proprietary payment solutions accepted by merchants that enable the completion of payments on our platform on behalf of our customers.
+We offer our customers the flexibility to use their accounts to purchase and receive payments for goods and services, as well as the ability to transfer and withdraw funds. We enable consumers to exchange funds more safely with merchants using a variety of funding sources, which may include a bank account, a PayPal or Venmo account balance, PayPal and Venmo branded credit products, a credit card, a debit card, certain cryptocurrencies, or other stored value products such as gift cards, and eligible credit card rewards. Our PayPal, Venmo, and 
+Xoom
+ products also make it safer and simpler for friends and family to transfer funds to each other. We offer merchants an end-to-end payments solution that provides authorization and settlement capabilities, as well as instant access to funds and payouts. We also help merchants connect with their customers, process exchanges and returns, and manage risk. We enable consumers to engage in cross-border shopping and merchants to extend their global reach while reducing the complexity and friction involved in enabling cross-border trade.
+Our beliefs are the foundation for how we conduct business every day. We live each day guided by our core values of Inclusion, Innovation, Collaboration, and Wellness. Together, our values ensure that we work together as one global team with our customers at the center of everything we do – and they push us to ensure we take care of ourselves, each other, and our communities.
+Job Description Summary: 
+This job acts as a project leader, coordinating the activities of other engineers, determining technical tasks, and improving existing structures and processes. It involves making technical decisions, collaborating with management to set standards, and representing the company to external partners.
+Job Description: Essential Responsibilities: 
+Acts as a project or system leader, coordinating the activities of other engineers on the project or within the system
+Determines the technical tasks that other engineers will follow
+Actions result in the achievement of customer, operational, program or service objectives
+Proactively improves existing structures & processes
+Exercises judgement in reconciling diverse and competing priorities (time, quality, complexity risk) to identify optimal solutions to problems
+Notices patterns and condenses repetition into densely meaningful generalized solutions
+Collaborates with management to set/improve standards for engineering rigor
+Trusted to represent PayPal, Inc to the outside world via interactions with partners, customers, or industry organizations 
+Minimum Qualifications: 
+5+ years relevant experience and a Bachelor’s degree OR 
+Any
+ equivalent combination of education and experience. 
+Additional Responsibilities 
+And
+ Preferred Qualifications 
+The pay for this role will depend on where you work and the relevant experience and expertise you bring. The expected range of pay, including base pay and commission-based compensation, for this role by location is:
+Primary Location : Pay Range: 
+Austin, Texas : ( $160,500-$235,826 Salary)
+Additional Location(s) : Pay Range: 
+San Jose, California : ( $176,500-$259,158 Salary)
+Details about the commission structure will be provided during the hiring process, consistent with applicable laws.
+Additional compensation for this role may include equity, or other incentive compensation, as applicable.
+Your way to impact 
+As a Staff software engineer for Venmo Payments Engineering you will act as a senior engineer and subject matter expert for the Payments Engineering team. You will have the opportunity to work on one of the biggest payments platforms that caters to 65 million active users and processes transactions worth 
+billion
+ of dollars. Given all the fun challenges, we are a fast-paced organization going through rapid growth that is solving 
+technical challenges at exponential scale. As an organization, we have a strong culture of committing to goals and delivering on timelines.
+Your day to day 
+Lead engineering efforts and team level processes by defining outcomes for others, refining ongoing processes, and providing technical advice to senior leaders on systems, solutions, challenges, and strategy.
+ 
+ 
+Support end-to-end ownership of design, implementation and operational excellence of software components while proactively improving existing structures and processes.
+ 
+ 
+Contribute to the technical engineering roadmap by completing quality and thorough assessments of
+ 
+implementation alternatives and their associated trade-offs and providing recommendations.
+ 
+ 
+Provides technical leadership for a small team with minimum guidance from management or senior teammates.
+  
+ 
+Design, estimate and implement new and refactored software services on the platform securely, reliably and at scale. Take ownership of quality of design and implementation of software components.
+  
+ 
+Deliver high quality code on time and follow our SDLC process.
+  
+ 
+Own the performance and availability of the services as well as participate in on call rotations and provide support during incidences.
+ 
+ 
+Have an appetite to learn and contribute to complex projects alongside your colleagues.
+   
+ 
+What Do You Need 
+To
+ Bring 
+Bachelor’s and/or Masters in computer science, or a related field of study, or equivalent experience
+  
+ 
+8+years’ experience with Python or equivalent high-level programming language
+  
+ 
+Advanced skills with RDBMS and NoSQL data stores, caching solutions (e.g. Redis, 
+ElastiCache
+, 
+Hazelcast
+) and messaging/queuing protocols/systems such as SQS/Kafka/RabbitMQ/Pulsar
+   
+ 
+Ability to lead projects and mentor all levels of engineering staff, along with managing relationships with Product, Engineering Operations and non-technical business and support teams
+  
+ 
+Expert with distributed services and backend systems
+  
+ 
+Expertise with building services on public cloud – preferably AWS or GCP, Azure
+  
+ 
+Experience in managing infrastructure as code using Terraform
+  
+ 
+Experience working with fault-tolerant and scalable distributed services and systems.
+ 
+Venmo
+Staff Software Engineer
+The Company 
+PayPal has been revolutionizing commerce globally for more than 25 years. Creating innovative experiences that make moving money, selling, and shopping simple, personalized, and secure, PayPal empowers consumers and businesses in approximately 200 markets to join and thrive in the global economy.
+We operate a global, two-sided network at scale that connects hundreds of millions of merchants and consumers. We help merchants and consumers connect, transact, and complete payments, whether they are online or in person. PayPal is more than a connection to third-party payment networks. We provide proprietary payment solutions accepted by merchants that enable the completion of payments on our platform on behalf of our customers.
+We offer our customers the flexibility to use their accounts to purchase and receive payments for goods and services, as well as the ability to transfer and withdraw funds. We enable consumers to exchange funds more safely with merchants using a variety of funding sources, which may include a bank account, a PayPal or Venmo account balance, PayPal and Venmo branded credit products, a credit card, a debit card, certain cryptocurrencies, or other stored value products such as gift cards, and eligible credit card rewards. Our PayPal, Venmo, and 
+Xoom
+ products also make it safer and simpler for friends and family to transfer funds to each other. We offer merchants an end-to-end payments solution that provides authorization and settlement capabilities, as well as instant access to funds and payouts. We also help merchants connect with their customers, process exchanges and returns, and manage risk. We enable consumers to engage in cross-border shopping and merchants to extend their global reach while reducing the complexity and friction involved in enabling cross-border trade.
+Our beliefs are the foundation for how we conduct business every day. We live each day guided by our core values of Inclusion, Innovation, Collaboration, and Wellness. Together, our values ensure that we work together as one global team with our customers at the center of everything we do – and they push us to ensure we take care of ourselves, each other, and our communities.
+Job Description Summary: 
+This job acts as a project leader, coordinating the activities of other engineers, determining technical tasks, and improving existing structures and processes. It involves making technical decisions, collaborating with management to set standards, and representing the company to external partners.
+Job Description: Essential Responsibilities: 
+Acts as a project or system leader, coordinating the activities of other engineers on the project or within the system
+Determines the technical tasks that other engineers will follow
+Actions result in the achievement of customer, operational, program or service objectives
+Proactively improves existing structures & processes
+Exercises judgement in reconciling diverse and competing priorities (time, quality, complexity risk) to identify optimal solutions to problems
+Notices patterns and condenses repetition into densely meaningful generalized solutions
+Collaborates with management to set/improve standards for engineering rigor
+Trusted to represent PayPal, Inc to the outside world via interactions with partners, customers, or industry organizations 
+Expected Qualifications: 
+5+ years relevant experience and a Bachelor’s degree OR 
+Any
+ equivalent combination of education and experience. 
+Additional Responsibilities 
+And
+ Preferred Qualifications 
+Engineering at Venmo
+At Venmo, we are creating a product that people love. We strive to create a delightful user
+experience while connecting the world and empowering people through payments. We are
+looking for intellectually curious people who want to be inspired and inspire others to change
+ 
+the world.
+Engineering is a craft, and at Venmo we want the internals of our software to be as elegant as
+ 
+the end user experience we are designing. We spend our days scaling our infrastructure and
+ 
+building new features to meet and exceed our users’ needs and wants. We work with a product
+ 
+team that is data-driven and human-centered in its design principles. We teach and learn from
+ 
+one another and push each other to be at our creative and analytical best.
+Job Description: Cloud/DevOps Engineer
+Our team is dedicated to ensuring the seamless operation of all user-facing services, as well as
+ 
+production and development systems. We manage Venmo’s infrastructure comprehensively,
+ 
+encompassing operations, automation, security, compliance, and release engineering. While we
+ 
+are focused on Cloud Engineering, our work integrates elements of Site Reliability Engineering
+ 
+(SRE) and DevOps projects as well.
+On the DevOps front, we oversee CI/CD infrastructure, develop smart and secure pipelines,
+ 
+implement self-service secret management systems, create development environments, and
+ 
+establish microservices scaffolding and testing frameworks. The quality of the systems we build
+ 
+is paramount to the company, and we prioritize it highly. Our infrastructure must be delivered
+ 
+automatically, thoroughly tested, and scanned for vulnerabilities through synthetic tests.
+As a Staff Engineer, you will support our critical domains, leading major initiatives related to
+ 
+your domain. You will be part of the architect group that defines the future of the Company’s
+ 
+technical develo
+p
+ment. This individual will be a hands-on contributor that teaches by example
+ 
+and mentors other engineers and product owners on how to improve their development, using
+ 
+our systems, by driving best practices. We have a lot of independence in our decisions, but we
+ 
+are kept accountable for the results.
+Our technical 
+stack
+:AWS
+, EKS, Docker, GitHub Enterprise, CDK, Terraform, GitHub Actions, Datadog, Bash, 
+Python,Go
+As a Staff Engineer, you will: 
+Contribute and help drive the strategic direction to one or more of our domains, leading initiatives in your area of expertise.
+Act as a hands-on contributor, while leading by example
+Mentor senior and junior engineers
+Enjoy a high degree of independence in decision-making while being accountable for 
+r
+esults of yourself and your team
+Be part of a team dedicated to driving the scalability and reliability of Venmo’s AWS cloud infrastructure
+Provide guidance, thought leadership, and mentorship to application teams to build and strengthen their cloud competencies
+What You’ll Do 
+Lead major initiatives end-to-end: internal teams rarely have dedicated project managers 
+You will define the design, identify stakeholders, navigate risks and changes, coordinate
+ 
+colleagues' work, implement solutions, and be accountable for timely and quality project
+ 
+delivery.
+Continually raise the bar through assisting fellow engineers in developing and delivering their code more efficiently and securely.
+Troubleshoot incidents, identify root causes, fix and document problems, and implement preventive measures.
+Coach and mentor engineers on design principles and best practices.
+Recognize, validate and evangelize emerging technologies and architectures that align with business objectives.
+Strategically and tactically leading by example, making meaningful contributions to the improvement of engineering teams’ production operations.
+Develop and improve tools and automation to manage infrastructure and application configuration as code.
+Enhance the quality, reliability, and stability of our infrastructure and operations. 
+What We’re Looking For 
+Bachelors and/or master's in computer science or related field of study
+7+ years' experience in software development or a related field
+5+ years' experience operating distributed applications 24x7x365, as part of a Cloud Engineering, DevOps, and/or SRE team.
+2+ years technical leadership experience
+Extensive hands-on experience with designing, implementing and supporting 
+Infrastructure (AWS Experience Preferred) To Support Global-scale Services 
+Deep hands-on experience with IaaS and PaaS solutions from AWS (or similar cloud provider)
+Hands-on programming and scripting (Python, Java, Bash, Go)
+Hands-on experience with containers & container orchestration: Docker, Kubernetes
+Strong communication skills with the ability to understand and explain technical issues to a non-technical audience
+GEICO
+Staff Engineer – Full Stack Applications FinOps
+ 
+At GEICO, we offer a rewarding career where your ambitions are met with endless possibilities. Every day we honor our iconic brand by offering quality coverage to millions of customers and being there when they need us most. We thrive through relentless innovation to exceed our customers’ expectations while making a real impact for our company through our shared purpose. When you join our company, we want you to feel valued, supported and proud to work here. That’s why we offer The GEICO Pledge: Great Company, Great Culture, Great Rewards and Great Careers. 
+GEICO is seeking an experienced Engineer with a passion for building high-performance, low maintenance, zero-downtime platforms, and applications. You will help drive our insurance business transformation as we transition from a traditional IT model to a tech organization with engineering excellence as its mission, while co-creating the culture of psychological safety and continuous improvement.
+We are seeking a highly motivated and skilled Staff Engineer – Full Stack within our Infra Governance and Capacity and workload management organization. This role is within the Infra Governance platform team, and its goal is to lead the development of full stack platform to address the infrastructure governance of a hybrid cloud environment. The 
+platform would be built using open-source technologies and would be scalable to handle GEICO’s growing infrastructure needs. The ideal candidate has lead level experience leading and managing both front-end UI and back-end systems development and all points in between and is willing to lead and contribute across the stack depending on the needs of the team.
+As a Staff Engineer, You Will 
+Provide technical and thought leadership across multiple layers of the stack, focusing on full-stack web application development and ensuring the integration of UI, micro-services, and backend systems. 
+Work closely with product leaders, other engineers and partner teams to understand product requirements, build a technical backlog, and develop solutions that align with product vision.
+Lead the development of UI using React, Typescript and Bootstrap on a Django framework while also contributing to the Architecture and development of microservices using Golang, Python, Django and Kafka.
+Design and implement loosely coupled, scalable micro-services
+Own and drive one to two service areas, being accountable for their successful delivery, from requirement analysis, design through to production, and ensuring they meet performance, scalability and reliability standards.
+Act as a role model and mentor to senior and junior engineers, guiding them in understanding the architecture, design and implementation of systems.
+Maintain excellent communication with 
+Parter
+ teams and leads, articulating technical implementations for various stakeholders, ensuring alignment across teams.
+Proactively explore unknown product requirements and design solutions that meet evolving needs, contributing to the continuous improvement of our platform.
+Leverage your experience in deploying wen applications in Kubernetes (k8s) environments, ensuring reliable interaction with backend services and seamless integration with cloud and on-premises systems. 
+Qualifications 
+Extensive experience in leading and building full-stack web applications, with a strong focus on front-end technologies like React, Typescript, Bootstrap) and Django-based backends.
+Proven expertise in designing and developing micro-services using 
+Golang,Java
+,Python,Django,gRPC
+ with protocol buffers, Kafka and Apache Spark with a deep understanding of both API and event-driven architectures.
+Strong background in leading UI development efforts, particularly with JavaScript based frameworks ensuring a seamless user experience.
+Experience leading web application development using micro-frontend architecture with client-side composition methods.
+Experience leading the integration of micro-frontend applications with a large single page application.
+Experience building architecture, design patterns, reliability, security and scaling of new and existing web applications.
+Expertise leading and contributing to event driven microservices using Kafka and Apache spark
+Expertise in data model design on relational databases like PostgreSQL and No-SQL databases like Cassandra, MongoDB
+Understanding of existing monitoring concepts and tooling
+Understanding of DevOps Concepts and Cloud Architecture
+Understanding of Azure platform and its native services
+Experience with continuous integration and continuous delivery (CICD)
+Knowledge of CS data structures and algorithms
+Knowledge of developer tooling across the software development life cycle (task management, source code, building, deployment, operations, real-time communication)
+Strong problem-solving ability
+Ability to excel in a fast-paced, startup-like environment
+Willingness to contribute and lead across all layers of the stack, including UI, backend and DevOps based on the needs of the team. 
+Experience 
+8+ years of professional software development experience and/or solutions engineering experience with technologies such as Java, TypeScript, 
+ReactJS,BoostrapJS
+, Python, Golang, Docker, Kubernetes, or Terraform. Must have recent hands-on experience with developing or single page web applications.
+4+ years of experience in open-source frameworks
+3+ years of experience with architecture and design
+3+ years of experience with AWS, GCP, Azure, or another cloud service
+Preferred experience with capacity management within hybrid cloud. 
+Education
+Bachelor's degree in computer science, Information Systems, or equivalent education or work experience 
+Affirm
+Staff Software Engineer, Backend (Growth Platform)
+ 
+Affirm is reinventing credit to make it more honest and friendly, giving consumers the flexibility to buy now and pay later without any hidden fees or compounding interest.
+The Growth Platform team builds shared backend platforms that power incentives, experimentation, personalization, and data-driven decisioning across 
+Affirm’s
+ consumer and merchant experiences, directly influencing customer acquisition, engagement, and retention.
+What you’ll do
+You will be responsible for setting technical strategy for your team on a year-long time scale, owning backend platforms that power incentives and growth initiatives across Affirm 
+You will collaborate with product management, analytics, and partner teams to shape technical direction for incentive systems, ensuring long-term sustainability, correctness, and clear trade-offs that inform roadmap decisions. 
+You will act as a force-multiplier by defining platform abstractions, APIs, and architectural patterns that enable product teams to safely launch, experiment with, and evolve incentive-based experiences. 
+You take ownership of your team’s operations and availability by ensuring robust monitoring, alerting, playbooks, and on-call practices are in place for business-critical incentive and growth systems. 
+You will foster a culture of quality and ownership by setting clear design and code review standards, and advocating for them beyond your immediate team through written proposals and technical discussions. 
+You will help develop talent on your team by providing actionable feedback, technical guidance, and leadership on complex, high-impact systems. 
+What we look for
+You have 8+ years of experience designing, developing, and launching backend systems at scale using languages like Python or Kotlin. 
+You have an extensive track record of developing highly available distributed systems using technologies such as AWS, MySQL, Spark, and Kubernetes. 
+You have experience building or evolving shared backend platforms that support Rewards, Loyalty, Incentives, Experimentation, or other growth-critical workflows used by multiple product teams. 
+You have led complex technical initiatives that required cross-team alignment, long-term architectural thinking, and influence without direct authority. 
+You have experience delivering major features, system components, or deprecating existing functionality through the definition and execution of a clear technical plan. You write high quality code that is easily understood and used by others. 
+You thrive in ambiguity, and are comfortable moving from low-level language idioms to the architecture of large-scale systems to understand how they work end to end. 
+Your growth and impact trajectory demonstrates that you have mastered gathering, incorporating, and iterating on feedback from engineering and cross-functional peers. 
+You have strong verbal and written communication skills that support effective collaboration with a global engineering organization. 
+This position requires either equivalent practical experience or a Bachelor’s degree in a related field.
