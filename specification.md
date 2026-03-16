@@ -1,19 +1,23 @@
-# Build retrieval-augmented generation (RAG) pipelines combining vector search and structured data sources to enable contextual search across engineering documentation 
+# Enterprise Architecture Copilot
 
-# Use c:\learning\lca-langgraph-essentials and c:\learning\lca-lc-foundations and c:\learning\intro-to-langsmith for langchain/langgraph/langsmith exapmles examples, we want to follow version1.0 best practices.
+Build retrieval-augmented generation (RAG) pipelines combining vector search and structured data sources to enable contextual search across engineering documentation.
 
-Steps:
-# Steps: Create data models for unstructured and structured data sources. 
-# Steps: Create vector database for unstructured data sources. 
-# Steps: Create SQL database for structured data sources. 
-# Steps: Create LangChain/LangGraph/LangSmith pipeline for unstructured data sources. 
-# Steps: Create LangChain/LangGraph/LangSmith pipeline for structured data sources. 
-# Steps: Create LangChain/LangGraph/LangSmith pipeline for hybrid data sources. 
+**References:** Use `c:\learning\lca-langgraph-essentials`, `c:\learning\lca-lc-foundations`, and `c:\learning\intro-to-langsmith` for LangChain/LangGraph/LangSmith examples. We want to follow v1.0 best practices.
 
-At Every step first plan the steps and then execute them after confirmation.
-Validate the output and test every step before moving to the next step.
-Write small code, so that code review is easy and test it before moving to the next step.
-Create sample data and script to generate structured and unstructured data.
+## Development Steps
+
+1. Create data models for unstructured and structured data sources.
+2. Create vector database for unstructured data sources.
+3. Create SQL database for structured data sources.
+4. Create LangChain/LangGraph/LangSmith pipeline for unstructured data sources.
+5. Create LangChain/LangGraph/LangSmith pipeline for structured data sources.
+6. Create LangChain/LangGraph/LangSmith pipeline for hybrid data sources.
+
+**Guidelines:**
+* At every step, first plan the steps and then execute them after confirmation.
+* Validate the output and test every step before moving to the next step.
+* Write small code so that code review is easy, and test it before moving to the next step.
+* Create sample data and scripts to generate structured and unstructured data.
 
 ## Data Sources (The "Engineering Documentation")
 
