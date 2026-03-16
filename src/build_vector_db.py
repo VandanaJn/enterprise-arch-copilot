@@ -10,8 +10,11 @@ from langchain_community.vectorstores import Chroma
 # Load environment variables (OPENAI_API_KEY)
 load_dotenv()
 
-DOCS_DIR = "docs"
-CHROMA_DB_DIR = "chroma_db"
+# Get the absolute root directory of the project (one level up from src/)
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+DOCS_DIR = os.path.join(ROOT_DIR, "docs")
+CHROMA_DB_DIR = os.path.join(ROOT_DIR, "chroma_db")
 
 def calculate_md5(content: str) -> str:
     """Generate an MD5 hash of the string content."""
@@ -28,7 +31,13 @@ def build_vector_database():
         return
 
     print("Loading documents from directory...")
-    # 2. Load the unstructured Markdown documents
+    # 2. Check if docs directory exists
+    if not os.path.exists(DOCS_DIR):
+        print(f"❌ Error: Source directory '{DOCS_DIR}' not found.")
+        print("Please run 'python src/generate_mock_data.py' first to generate the mock documents.")
+        return
+
+    # 3. Load the unstructured Markdown documents
     # By using the glob pattern '**/*.md', we grab both ADRs and Runbooks recursively.
     loader = DirectoryLoader(
         DOCS_DIR, 

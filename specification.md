@@ -14,6 +14,7 @@ Build retrieval-augmented generation (RAG) pipelines combining vector search and
 6. Create LangChain/LangGraph/LangSmith pipeline for hybrid data sources.
 
 **Guidelines:**
+* Follow TDD (Test-Driven Development) approach.
 * At every step, first plan the steps and then execute them after confirmation.
 * Validate the output and test every step before moving to the next step.
 * Write small code so that code review is easy, and test it before moving to the next step.

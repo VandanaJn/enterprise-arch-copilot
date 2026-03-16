@@ -2,11 +2,14 @@ import os
 import sqlite3
 import json
 
+# Get the absolute root directory of the project (one level up from src/)
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 # Define directories for unstructured data
-DOCS_DIR = "docs"
+DOCS_DIR = os.path.join(ROOT_DIR, "docs")
 ADR_DIR = os.path.join(DOCS_DIR, "adrs")
 RUNBOOK_DIR = os.path.join(DOCS_DIR, "runbooks")
-DB_FILE = "engineering_data.db"
+DB_FILE = os.path.join(ROOT_DIR, "engineering_data.db")
 
 def create_directories():
     """Create the necessary directory structure for Markdown docs."""
