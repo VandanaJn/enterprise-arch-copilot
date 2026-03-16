@@ -47,7 +47,4 @@ You will use LangChain (or LlamaIndex) to build a **Router Agent**. The agent re
     *   *Agent Action 2 (Unstructured):* The LLM takes `checkout-service` and queries the Vector Database for runbooks specifically related to that service.
     *   *Result:* A consolidated response: "Contact Team Alpha. Here are the steps from their runbook to mitigate a 504 on the checkout service..."
 
-## Why this is perfect for you:
-1.  **It completely validates your resume:** When an interviewer asks, "Tell me about this RAG pipeline you built combining vector and structured data," you can describe this *exact* architecture.
-2.  **It is highly relevant:** This is exactly the type of platform tooling companies like FINRA and AppFolio are trying to build internally.
-3.  **It is bounded and buildable:** You can build this in Python in a few days using basic LangChain, SQLite, and Chroma. No massive cloud infrastructure required.
+
