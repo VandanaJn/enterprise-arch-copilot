@@ -120,6 +120,9 @@ def build_vector_database():
     vector_store.add_documents(documents=final_chunks)
     
     print(f"✅ Successfully updated localized Vector Database at: ./{CHROMA_DB_DIR}/")
+    
+    # Explicitly clear the object to help release file locks on Windows
+    del vector_store
 
 if __name__ == "__main__":
     build_vector_database()

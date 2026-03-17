@@ -2,17 +2,20 @@ import os
 import sqlite3
 import pytest
 from src.generate_mock_data import generate_unstructured_data, generate_structured_data, create_directories, DOCS_DIR, ADR_DIR, RUNBOOK_DIR, DB_FILE
+from src.agent import close_connections
 import shutil
 
 @pytest.fixture(autouse=True)
 def cleanup():
     """Cleanup before and after each test."""
+    close_connections()
     if os.path.exists(DOCS_DIR):
         shutil.rmtree(DOCS_DIR)
     if os.path.exists(DB_FILE):
         os.remove(DB_FILE)
     yield
     # Teardown
+    close_connections()
     if os.path.exists(DOCS_DIR):
         shutil.rmtree(DOCS_DIR)
     if os.path.exists(DB_FILE):

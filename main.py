@@ -1,0 +1,71 @@
+import os
+import asyncio
+from dotenv import load_dotenv
+from langchain_core.messages import HumanMessage
+from src.agent import create_enterprise_copilot, close_connections
+
+# Load environment variables (OPENAI_API_KEY)
+load_dotenv()
+
+async def chat_loop():
+    print("\n--- Enterprise Architecture Copilot ---")
+    print("Type 'exit' or 'quit' to stop.\n")
+    
+    # Initialize the compiled LangGraph agent
+    agent = create_enterprise_copilot()
+    
+    while True:
+        try:
+            user_input = input("You: ")
+            if user_input.lower() in ["exit", "quit"]:
+                break
+                
+            # Initial state for the graph
+            inputs = {"messages": [HumanMessage(content=user_input)]}
+            
+            # Use a thread_id for persistence (though we're not using a checkpointer yet here)
+            config = {"configurable": {"thread_id": "local_test_user"}}
+            
+            print("\nCopilot: ", end="", flush=True)
+            
+            # Stream the events from the graph
+            # We use 'values' mode to see the state updates, which include tool messages
+            printed_msgs = set()
+            async for chunk in agent.astream(inputs, config, stream_mode="values"):
+                if "messages" in chunk:
+                    for msg in chunk["messages"]:
+                        if msg.id not in printed_msgs:
+                            if msg.type == "ai" and msg.tool_calls:
+                                for tc in msg.tool_calls:
+                                    print(f"\n[Tool Call] {tc['name']}({tc['args']})")
+                            elif msg.type == "tool":
+                                print(f"[Tool Response] {msg.content[:200]}..." if len(msg.content) > 200 else f"[Tool Response] {msg.content}")
+                            elif msg.type == "ai" and not msg.tool_calls:
+                                # This is the final answer or incremental thoughts
+                                # For a clean CLI, we'll wait for the complete answer at the end
+                                pass
+                            printed_msgs.add(msg.id)
+            
+            # Run a full invocation for the clean final answer
+            result = await agent.ainvoke(inputs, config)
+            final_content = result["messages"][-1].content
+            print(f"\nFinal Answer: {final_content}")
+            print("-" * 20)
+            
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            print(f"\nError: {e}")
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(chat_loop())
+    except KeyboardInterrupt:
+        print("\nExiting gracefully...")
+    finally:
+        try:
+            from src.agent import close_connections
+            close_connections()
+        except:
+            pass
+        print("Done.")

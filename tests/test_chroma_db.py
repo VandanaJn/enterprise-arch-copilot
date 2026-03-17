@@ -39,5 +39,8 @@ def test_database():
             print(f"Document Type Tag: {doc.metadata.get('document_type', 'Unknown')}")
             print(f"Content snippet: {doc.page_content[:150]}...")
             
+    # Explicitly clear the object to help release file locks on Windows
+    del vector_store
+            
 if __name__ == "__main__":
     test_database()
