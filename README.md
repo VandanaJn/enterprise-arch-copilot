@@ -1,6 +1,6 @@
 # Enterprise Architecture Copilot
 
-This project is an advanced Retrieval-Augmented Generation (RAG) system built with LangChain, LangGraph, and OpenAI embeddings. It simulates an AI engineering assistant capable of querying internal enterprise architecture documents (ADRs, runbooks, schemas) against structured data sources (SQLite) and unstructured data sources (ChromaDB).
+This project is an advanced Retrieval-Augmented Generation (RAG) system built with LangChain, LangGraph, and OpenAI embeddings. It simulates an AI engineering assistant capable of querying internal enterprise documentation (ADRs, runbooks) and structured metadata (service catalog, API endpoints) via SQLite and ChromaDB.
 
 ## Project Features
 

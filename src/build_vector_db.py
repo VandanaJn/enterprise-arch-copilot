@@ -20,57 +20,44 @@ def calculate_md5(content: str) -> str:
     """Generate an MD5 hash of the string content."""
     return hashlib.md5(content.encode('utf-8')).hexdigest()
 
-def build_vector_database():
-    """Loads markdown files, chunks them semantically, and stores them in Chroma.
-       Implements hash-based UPSERT to avoid duplicates.
-    """
-    
-    # 1. Ensure API Key is set
-    if not os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY") == "your_openai_api_key_here":
-        print("ERROR: Please update the .env file with your actual OPENAI_API_KEY.")
-        return
+def get_embeddings():
+    """Returns the OpenAIEmbeddings instance."""
+    return OpenAIEmbeddings()
 
-    print("Loading documents from directory...")
-    # 2. Check if docs directory exists
-    if not os.path.exists(DOCS_DIR):
-        print(f"❌ Error: Source directory '{DOCS_DIR}' not found.")
-        print("Please run 'python src/generate_mock_data.py' first to generate the mock documents.")
-        return
+def get_vector_store(persist_directory: str, embeddings):
+    """Returns the Chroma instance."""
+    return Chroma(
+        persist_directory=persist_directory, 
+        embedding_function=embeddings
+    )
 
-    # 3. Load the unstructured Markdown documents
-    # By using the glob pattern '**/*.md', we grab both ADRs and Runbooks recursively.
+def load_documents(directory: str):
+    """Loads markdown documents from the specified directory."""
+    if not os.path.exists(directory):
+        print(f"❌ Error: Source directory '{directory}' not found.")
+        return []
+        
     loader = DirectoryLoader(
-        DOCS_DIR, 
+        directory, 
         glob="**/*.md", 
         loader_cls=TextLoader,
         loader_kwargs={'autodetect_encoding': True} 
     )
-    documents = loader.load()
-    print(f"Loaded {len(documents)} document(s).")
+    return loader.load()
 
-    # 3. Initialize Embedding Model & ChromaDB connection
-    embeddings = OpenAIEmbeddings()
-    vector_store = Chroma(
-        persist_directory=CHROMA_DB_DIR, 
-        embedding_function=embeddings
-    )
-
-    # 4. Hash Checking and Deduplication Filter
-    print("Checking document hashes for updates...")
+def filter_changed_documents(documents, vector_store):
+    """Compares hashes and returns only new or updated documents."""
     docs_to_process = []
+    print("Checking document hashes for updates...")
     
     for doc in documents:
-        # Calculate the hash of the raw document content
         doc_hash = calculate_md5(doc.page_content)
-        # Store the hash in metadata so it persists to the chunks later
         doc.metadata["document_hash"] = doc_hash
         source_path = doc.metadata.get("source", "")
         
-        # Query Chroma to see if chunks from this exact file already exist
         existing_chunks = vector_store.get(where={"source": source_path})
         
         if existing_chunks and len(existing_chunks.get('ids', [])) > 0:
-            # Check the hash of the first existing chunk for this document
             first_existing_hash = existing_chunks['metadatas'][0].get("document_hash")
             
             if first_existing_hash == doc_hash:
@@ -82,18 +69,15 @@ def build_vector_database():
         else:
             print(f"  [NEW] Found new document: {source_path}")
             
-        # If it's new or updated, queue it for semantic chunking
         docs_to_process.append(doc)
+    return docs_to_process
 
-    if not docs_to_process:
-        print("✅ No changed documents found. Vector database is up to date!")
-        return
-
-    # 5. Semantic Chunking for NEW or UPDATED documents only
-    print(f"Splitting {len(docs_to_process)} document(s) into semantic chunks...")
+def chunk_documents(documents, embeddings):
+    """Handles semantic and character-based splitting of documents."""
+    print(f"Splitting {len(documents)} document(s) into semantic chunks...")
     
     semantic_splitter = SemanticChunker(embeddings)
-    semantic_chunks = semantic_splitter.split_documents(docs_to_process)
+    semantic_chunks = semantic_splitter.split_documents(documents)
     print(f"Initial split yielded {len(semantic_chunks)} semantic chunk(s).")
 
     max_size_fallback_splitter = RecursiveCharacterTextSplitter(
@@ -103,10 +87,12 @@ def build_vector_database():
     )
     final_chunks = max_size_fallback_splitter.split_documents(semantic_chunks)
     print(f"After enforcing max size limit, we have {len(final_chunks)} final chunk(s).")
+    return final_chunks
 
-    # 6. Enhance Metadata for Hybrid Filtering
+def enhance_metadata(chunks):
+    """Adds metadata tags (e.g., document_type) based on document source path."""
     print("Injecting explicit metadata tags...")
-    for chunk in final_chunks:
+    for chunk in chunks:
         source_path = chunk.metadata.get("source", "").lower()
         if "runbooks" in source_path:
             chunk.metadata["document_type"] = "runbook"
@@ -114,14 +100,46 @@ def build_vector_database():
             chunk.metadata["document_type"] = "adr"
         else:
             chunk.metadata["document_type"] = "unknown"
+    return chunks
 
-    # 7. Add only the new/updated chunks into Chroma DB
+def build_vector_database(docs_dir=DOCS_DIR, chroma_db_dir=CHROMA_DB_DIR):
+    """Main function to build or update the vector database from markdown docs."""
+    
+    if not os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY") == "your_openai_api_key_here":
+        print("ERROR: Please update the .env file with your actual OPENAI_API_KEY.")
+        return
+
+    # 1. Load documents
+    documents = load_documents(docs_dir)
+    if not documents:
+        print("Please run 'python src/generate_mock_data.py' first to generate the mock documents.")
+        return
+    print(f"Loaded {len(documents)} document(s).")
+
+    # 2. Get embeddings and vector store
+    embeddings = get_embeddings()
+    vector_store = get_vector_store(chroma_db_dir, embeddings)
+
+    # 3. Filter for changed documents
+    docs_to_process = filter_changed_documents(documents, vector_store)
+
+    if not docs_to_process:
+        print("✅ No changed documents found. Vector database is up to date!")
+        return
+
+    # 4. Chunk changed documents
+    final_chunks = chunk_documents(docs_to_process, embeddings)
+
+    # 5. Enhance metadata
+    final_chunks = enhance_metadata(final_chunks)
+
+    # 6. Upsert into vector store
     print(f"Inserting {len(final_chunks)} new chunks into Chroma DB...")
     vector_store.add_documents(documents=final_chunks)
     
-    print(f"✅ Successfully updated localized Vector Database at: ./{CHROMA_DB_DIR}/")
+    print(f"✅ Successfully updated localized Vector Database at: ./{chroma_db_dir}/")
     
-    # Explicitly clear the object to help release file locks on Windows
+    # Release file locks
     del vector_store
 
 if __name__ == "__main__":

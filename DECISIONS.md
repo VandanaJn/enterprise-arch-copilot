@@ -51,3 +51,13 @@ This document tracks the rationale behind our technical choices for the Engineer
 ### Manual Metadata Injection for Hybrid Filtering
 *   **Decision:** We are manually injecting a `document_type` metadata field (e.g., `adr` or `runbook`) into each parsed chunk based on its source folder.
 *   **Rationale:** While vector search (Semantic Similarity) is excellent at retrieving contextually similar text, it is poor at exact-match filtering. By explicitly tagging the chunks in ChromaDB with structured metadata, we unlock **Hybrid Search**. This allows the Agent Router to later issue a targeted query like: *"Find me documents semantically similar to '504 timeout', but apply a hard filter where `metadata.document_type == 'runbook'`"* This vastly reduces LLM hallucination on large enterprise repositories.
+
+## 3. Agent Architecture
+
+### Single-Agent Router vs. Multi-Agent Systems
+*   **Decision:** Use a single-agent router architecture instead of a multi-agent "supervisor" pattern.
+*   **Rationale:** 
+    *   **Efficiency:** A single-agent router is more token-efficient and reduces latency by avoiding inter-agent communication overhead.
+    *   **Iterative Reasoning:** The current router can already perform sequential tool calls (e.g., query SQL then Search Vector DB) within a single execution loop.
+    *   **Complexity Management:** Multi-agent systems add significant orchestration complexity (managing handoffs, state merging, and specialized prompts). For the current scope of RAG and SQL retrieval, a single well-prompted agent is more robust and easier to maintain.
+    *   **Future Proofing:** This single-agent approach is sufficient for the current simple use case. If the system grows to include significantly more tools or highly specialized domain logic, the architecture can be refactored into a multi-agent supervisor/worker pattern later. 

@@ -9,6 +9,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DOCS_DIR = os.path.join(ROOT_DIR, "docs")
 ADR_DIR = os.path.join(DOCS_DIR, "adrs")
 RUNBOOK_DIR = os.path.join(DOCS_DIR, "runbooks")
+TEMPLATES_DIR = os.path.join(ROOT_DIR, "templates", "mock_docs")
 DB_FILE = os.path.join(ROOT_DIR, "engineering_data.db")
 
 def create_directories():
@@ -18,83 +19,30 @@ def create_directories():
         print(f"Created directory: {directory}")
 
 def generate_unstructured_data():
-    """Generate mock Markdown Architecture Decision Records and Runbooks."""
-    adrs = {
-        "001-use-kafka-for-events.md": """# ADR 001: Use Kafka for Event Streaming
+    """Generate mock Markdown Architecture Decision Records and Runbooks from templates."""
+    
+    doc_types = ["adrs", "runbooks"]
+    
+    for doc_type in doc_types:
+        source_dir = os.path.join(TEMPLATES_DIR, doc_type)
+        target_dir = os.path.join(DOCS_DIR, doc_type)
         
-**Status:** Accepted
-**Date:** 2023-10-15
-
-## Context
-Our monolithic architecture is struggling to handle the volume of checkout processing. We need a robust way to decouple services. RabbitMQ was considered but rejected due to throughput limitations.
-
-## Decision
-We will use Apache Kafka as our primary event streaming platform. The `checkout-service` will publish `OrderPlaced` events to the `checkout.events` topic. Downstream services like `inventory-service` and `notification-service` will subscribe to this topic.
-
-## Consequences
-- Better isolation between the checkout flow and downstream processing.
-- Increased operational complexity (need to manage Kafka clusters).
-""",
-        "002-migrate-checkout-to-aws.md": """# ADR 002: Migrate Checkout Service to AWS EKS
-        
-**Status:** Accepted
-**Date:** 2024-01-10
-
-## Context
-The `checkout-service` requires high elasticity during peak holiday shopping.
-
-## Decision
-We will migrate the `checkout-service` from on-premise VMs to AWS Elastic Kubernetes Service (EKS).
-
-## Consequences
-- Faster auto-scaling during traffic spikes.
-- Requires team training on Kubernetes deployment manifests.
-"""
-    }
-
-    runbooks = {
-        "checkout-service-504-mitigation.md": """# Runbook: Checkout Service 504 Gateway Timeout
-
-## Symptoms
-- Datadog alerts show spike in 504 errors on the API Gateway for the `/api/v1/checkout` route.
-- Customers report inability to complete purchases.
-
-## Diagnostic Steps
-1. Verify if the `checkout-service` pods are crashing in EKS using `kubectl get pods -n checkout`.
-2. Check the connection to the primary PostgreSQL database. 
-3. Verify if Kafka publisher is blocking.
-
-## Mitigation
-1. If pods are crash-looping due to memory, immediately scale up the deployment: 
-   `kubectl scale deployment checkout-service --replicas=10 -n checkout`
-2. If database connection is exhausted, restart the connection pooler.
-3. Page the `Team Alpha` on-call if the issue persists after 5 minutes.
-""",
-        "user-profile-db-failover.md": """# Runbook: User Profile DB Failover
-
-## Symptoms
-- Read latency on `user-profile-service` exceeds 500ms.
-
-## Mitigation
-1. Manually promote the read-replica to primary in the AWS RDS Console.
-2. Update the `DB_HOST` secret in AWS Secrets Manager.
-3. Perform a rolling restart of the `user-profile-service` pods.
-"""
-    }
-
-    # Write ADRs
-    for filename, content in adrs.items():
-        filepath = os.path.join(ADR_DIR, filename)
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"Generated ADR: {filepath}")
-
-    # Write Runbooks
-    for filename, content in runbooks.items():
-        filepath = os.path.join(RUNBOOK_DIR, filename)
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"Generated Runbook: {filepath}")
+        if not os.path.exists(source_dir):
+            print(f"⚠️ Warning: Template directory '{source_dir}' not found. Skipping {doc_type}.")
+            continue
+            
+        print(f"Generating {doc_type} from templates...")
+        for filename in os.listdir(source_dir):
+            if filename.endswith(".md"):
+                source_path = os.path.join(source_dir, filename)
+                target_path = os.path.join(target_dir, filename)
+                
+                with open(source_path, "r", encoding="utf-8") as f_src:
+                    content = f_src.read()
+                    
+                with open(target_path, "w", encoding="utf-8") as f_dest:
+                    f_dest.write(content)
+                print(f"  [OK] Generated: {target_path}")
 
 def generate_structured_data():
     """Generate a local SQLite database with Service Catalog and API Endpoints."""

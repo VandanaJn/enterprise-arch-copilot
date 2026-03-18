@@ -82,13 +82,28 @@ def search_engineering_docs(query: str) -> str:
 
 @tool
 def query_sql_database(query: str) -> str:
-    """Use this tool to execute a read-only SQL SELECT query against the structured engineering metadata database."""
+    """Use this tool to execute a read-only SQL SELECT query against the structured engineering metadata database.
+    If you are unsure of the exact service name, use the SQL LIKE operator (e.g., name LIKE '%service%').
+    """
     db = get_sql_db()
     try:
         result = db.run(query)
         return result
     except Exception as e:
         return f"Error executing query: {str(e)}"
+
+@tool
+def list_all_services(query: str = "") -> str:
+    """Returns a list of all service names currently available in the engineering service catalog.
+    Use this if a user asks about a service that returns no results in query_sql_database, so you can discover the correct name.
+    """
+    db = get_sql_db()
+    try:
+        # We just want a plain list of names
+        result = db.run("SELECT name FROM service_catalog")
+        return f"Available services: {result}"
+    except Exception as e:
+        return f"Error listing services: {str(e)}"
 
 from langgraph.graph import StateGraph, START, END
 from langchain.agents import create_agent
@@ -106,23 +121,25 @@ def create_enterprise_copilot():
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
     
     # 2. Define the tools the agent has access to
-    tools = [search_engineering_docs, query_sql_database]
+    tools = [search_engineering_docs, query_sql_database, list_all_services]
     
     # 3. Define the System Prompt
     system_prompt = SystemMessage(content='''You are an Enterprise Architecture Copilot.
 You help engineers find context about systems, runbooks, and architectures.
 
-You have access to two tools:
+You have access to three tools:
 1. `search_engineering_docs`: Use this for conceptually finding unstructured Markdown text, like Architecture Decision Records (ADRs) or Runbooks.
-2. `query_sql_database`: Use this to query a structured SQLite database.
+2. `query_sql_database`: Use this to query a structured SQLite database. 
+3. `list_all_services`: Use this to get a full list of valid service names in our catalog.
 
 **Database Schema:**
 - `service_catalog` table: `id`, `name` (the service name), `owner_team`, `version`, `oncall_rotation`, `repository_url`.
 - `api_endpoints` table: `id`, `path`, `service_id` (FK to service_catalog), `method`, `description`.
 
 **Guidelines:**
-- If a question requires information from both tools (e.g. "Who owns the service and what is its failover runbook?"), use them sequentially.
-- If a SQL query returns no results, inform the user that the service or data point was not found in the catalog, rather than reporting an access error.
+- **Robust SQL Queries**: Service names in the database might have suffixes like `-service`. If a user provides a partial name (e.g. "checkout"), always try using `LIKE '%name%'` in your SQL query first to be robust.
+- **Service Discovery**: If `query_sql_database` returns no results for a service name the user provided, use `list_all_services` to find the correct name from the catalog. Suggest the closest matches to the user or try your query again with the correct name.
+- **Hybrid Search**: If a question requires information from both the catalog and docs (e.g. "Who owns the service and what is its failover runbook?"), use them sequentially.
 - Be concise and technical.''')
     
     # 4. Create the LangChain Agent
@@ -145,5 +162,6 @@ You have access to two tools:
     
     # Compile the graph
     graph = builder.compile()
+    
     
     return graph
