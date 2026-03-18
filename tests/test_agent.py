@@ -13,6 +13,8 @@ def setup_agent_test_data():
     yield
     # No teardown here, rely on global session teardown in conftest.py
 
+
+@pytest.mark.integration
 def test_vector_tool_execution():
     """Test that the unstructured search tool returns chunks from ChromaDB."""
     # Query related to ADR 002
@@ -20,7 +22,9 @@ def test_vector_tool_execution():
     
     # We expect the text to contain the rationale mentioned in our mock data
     assert "elasticity" in result.lower() or "auto-scaling" in result.lower()
-    
+
+
+@pytest.mark.integration
 def test_sql_tool_execution():
     """Test that the structured search tool executes queries against engineering_data.db."""
     # Query for the user profile service
@@ -28,7 +32,9 @@ def test_sql_tool_execution():
     
     # We expect the tool to run syntax that returns the owner from SQLite
     assert "Team Beta" in result
-    
+
+
+@pytest.mark.integration
 def test_agent_routes_to_vector():
     """Test that the LangGraph agent routes unstructured conceptually queries to Vector DB."""
     agent = create_enterprise_copilot()
@@ -51,6 +57,7 @@ def test_agent_routes_to_vector():
     # Assert the agent decided to use our vector search tool
     assert "search_engineering_docs" in tool_calls
 
+@pytest.mark.integration
 def test_agent_routes_to_sql():
     """Test that the LangGraph agent routes factual metadata queries to the SQLite DB."""
     agent = create_enterprise_copilot()
@@ -72,6 +79,8 @@ def test_agent_routes_to_sql():
     # (Note: Could also be SQLDatabaseToolkit's specific tool name, but we look for routing intent)
     assert any("sql" in tool.lower() for tool in tool_calls)
 
+
+@pytest.mark.integration
 def test_agent_hybrid_search():
     """Test Scenario 3: Agent uses SQL to find a service, then Vector DB to find its runbook."""
     agent = create_enterprise_copilot()

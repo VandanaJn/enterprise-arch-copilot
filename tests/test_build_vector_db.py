@@ -68,6 +68,7 @@ def test_enhance_metadata():
     assert enhanced[1].metadata["document_type"] == "adr"
     assert enhanced[2].metadata["document_type"] == "unknown"
 
+@pytest.mark.integration
 @pytest.mark.skipif(not os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY") == "your_openai_api_key_here", reason="Requires OpenAI API Key")
 def test_build_vector_database_integration(mock_docs_dir, test_chroma_dir):
     """Test the full build process using temporary directories."""
@@ -94,6 +95,7 @@ def test_build_vector_database_integration(mock_docs_dir, test_chroma_dir):
     # Explicitly delete to release locks
     del vector_store
 
+@pytest.mark.integration
 @pytest.mark.skipif(not os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY") == "your_openai_api_key_here", reason="Requires OpenAI API Key")
 def test_avoids_duplicates_on_rerun(mock_docs_dir, test_chroma_dir):
     """Test the UPSERT logic by running the builder twice."""

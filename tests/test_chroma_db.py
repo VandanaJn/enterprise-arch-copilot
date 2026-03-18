@@ -1,4 +1,5 @@
 import os
+import pytest
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
@@ -7,6 +8,8 @@ load_dotenv()
 
 from src.build_vector_db import CHROMA_DB_DIR
 
+
+@pytest.mark.integration
 def test_database():
     if not os.path.exists(CHROMA_DB_DIR):
         print(f"❌ Error: Database directory '{CHROMA_DB_DIR}' not found.")

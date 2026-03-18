@@ -65,7 +65,21 @@ This script processes the markdown files, calculates their hashes, transforms th
 
 ## Running Tests
 
-To execute the unit tests and ensure your environment is configured correctly:
+**Quick run (no API key or built DB required)** — runs unit tests only (e.g. data generation, chunking, metadata):
 ```bash
-pytest tests/ -v
+pytest tests/ -v -m "not integration"
 ```
+
+**Full test suite** — integration tests need `OPENAI_API_KEY` and a built vector DB. One-time setup:
+1. Set `OPENAI_API_KEY` in your `.env` file.
+2. Generate mock data and build the vector DB:
+   ```bash
+   python src/generate_mock_data.py
+   python src/build_vector_db.py
+   ```
+3. Run all tests:
+   ```bash
+   pytest tests/ -v
+   ```
+
+Integration tests (agent routing, vector search, Chroma connectivity) are marked with `@pytest.mark.integration` and are skipped when the API key is missing or when `chroma_db/` does not exist.
