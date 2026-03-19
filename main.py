@@ -1,5 +1,5 @@
-import os
 import asyncio
+import logging
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 from src.agent import create_enterprise_copilot, close_connections
@@ -28,11 +28,12 @@ async def chat_loop():
             
             print("\nCopilot: ", end="", flush=True)
             
-            # Stream the events from the graph
-            # We use 'values' mode to see the state updates, which include tool messages
+            # Single run: stream to show tool calls, then use last state for final answer (one LangSmith trace per query)
             printed_msgs = set()
+            last_messages = []
             async for chunk in agent.astream(inputs, config, stream_mode="values"):
                 if "messages" in chunk:
+                    last_messages = chunk["messages"]
                     for msg in chunk["messages"]:
                         if msg.id not in printed_msgs:
                             if msg.type == "ai" and msg.tool_calls:
@@ -41,14 +42,10 @@ async def chat_loop():
                             elif msg.type == "tool":
                                 print(f"[Tool Response] {msg.content[:200]}..." if len(msg.content) > 200 else f"[Tool Response] {msg.content}")
                             elif msg.type == "ai" and not msg.tool_calls:
-                                # This is the final answer or incremental thoughts
-                                # For a clean CLI, we'll wait for the complete answer at the end
                                 pass
                             printed_msgs.add(msg.id)
             
-            # Run a full invocation for the clean final answer
-            result = await agent.ainvoke(inputs, config)
-            final_content = result["messages"][-1].content
+            final_content = last_messages[-1].content if last_messages else "(no response)"
             print(f"\nFinal Answer: {final_content}")
             print("-" * 20)
             
@@ -58,6 +55,7 @@ async def chat_loop():
             print(f"\nError: {e}")
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     try:
         asyncio.run(chat_loop())
     except KeyboardInterrupt:
@@ -66,6 +64,7 @@ if __name__ == "__main__":
         try:
             from src.agent import close_connections
             close_connections()
-        except:
-            pass
+        except Exception as e:
+            logging.exception("Error closing database connections during shutdown: %s", e)
+            raise
         print("Done.")

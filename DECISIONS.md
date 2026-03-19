@@ -60,4 +60,12 @@ This document tracks the rationale behind our technical choices for the Engineer
     *   **Efficiency:** A single-agent router is more token-efficient and reduces latency by avoiding inter-agent communication overhead.
     *   **Iterative Reasoning:** The current router can already perform sequential tool calls (e.g., query SQL then Search Vector DB) within a single execution loop.
     *   **Complexity Management:** Multi-agent systems add significant orchestration complexity (managing handoffs, state merging, and specialized prompts). For the current scope of RAG and SQL retrieval, a single well-prompted agent is more robust and easier to maintain.
-    *   **Future Proofing:** This single-agent approach is sufficient for the current simple use case. If the system grows to include significantly more tools or highly specialized domain logic, the architecture can be refactored into a multi-agent supervisor/worker pattern later. 
+    *   **Future Proofing:** This single-agent approach is sufficient for the current simple use case. If the system grows to include significantly more tools or highly specialized domain logic, the architecture can be refactored into a multi-agent supervisor/worker pattern later.
+
+### Retries and Backoff (OpenAI / Chroma)
+*   **Decision:** No retries or circuit breaker in the current demo; failures surface immediately to the user.
+*   **Rationale:** Keeps the codebase simple for portfolio and local use. For production we would add: (1) **Retries with backoff** (e.g. `tenacity` or LangChain’s built-in retry) on transient OpenAI/network errors, with exponential backoff and a max attempt count; (2) **Circuit breaker** (e.g. `pybreaker` or a small state machine) around external calls so repeated failures stop hammering the API and allow partial degradation (e.g. SQL-only mode if Chroma is down). We would also consider timeouts and idempotency for write paths (e.g. vector upserts).
+
+### Observability (LangSmith)
+*   **Decision:** Use LangSmith for tracing when configured via environment variables (`LANGSMITH_API_KEY`, `LANGSMITH_TRACING`, `LANGSMITH_PROJECT`). No application code changes are required; LangChain/LangGraph auto-instrument when these are set.
+*   **Rationale:** LangSmith is the standard observability layer for the LangChain ecosystem. With `.env` (or `.env.example` copied to `.env`) populated, every agent run, tool call, and LLM request is traced to the configured project. This supports debugging, latency analysis, and token usage visibility without adding custom logging or metrics code. The template `.env.example` documents the optional variables; tracing is off if `LANGSMITH_API_KEY` is unset.

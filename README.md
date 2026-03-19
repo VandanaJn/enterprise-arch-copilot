@@ -43,11 +43,17 @@ This project is an advanced Retrieval-Augmented Generation (RAG) system built wi
    pip install -r requirements.txt
    ```
 
-4. **Set your API Keys:**
-   Create a `.env` file in the root directory and append your OpenAI API key for generating embeddings:
-   ```env
-   OPENAI_API_KEY=your_actual_api_key_here
+4. **Configure environment:**
+   Copy `.env.example` to `.env` and set your keys:
+   ```bash
+   cp .env.example .env
    ```
+   Then edit `.env` and set at least:
+   - `OPENAI_API_KEY` — required for the copilot, embeddings, and integration tests.
+   Optional for [LangSmith](https://smith.langchain.com) observability (traces, latency, tool calls):
+   - `LANGSMITH_API_KEY`
+   - `LANGSMITH_TRACING=true`
+   - `LANGSMITH_PROJECT=enterprise-arch-copilot`
 
 ## Usage
 
@@ -83,3 +89,7 @@ pytest tests/ -v -m "not integration"
    ```
 
 Integration tests (agent routing, vector search, Chroma connectivity) are marked with `@pytest.mark.integration` and are skipped when the API key is missing or when `chroma_db/` does not exist.
+
+## Observability (LangSmith)
+
+When `LANGSMITH_API_KEY` and `LANGSMITH_TRACING=true` are set in `.env`, LangChain/LangGraph automatically send traces to [LangSmith](https://smith.langchain.com). You can inspect runs, latency, tool calls, and token usage in the project named by `LANGSMITH_PROJECT` (e.g. `enterprise-arch-copilot`). No code changes are required beyond loading `.env`; the framework instruments calls when these variables are present.
