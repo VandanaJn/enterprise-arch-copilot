@@ -34,7 +34,7 @@ def get_vector_store(persist_directory: str, embeddings):
 def load_documents(directory: str):
     """Loads markdown documents from the specified directory."""
     if not os.path.exists(directory):
-        print(f"❌ Error: Source directory '{directory}' not found.")
+        print(f"[ERROR] Source directory '{directory}' not found.")
         return []
         
     loader = DirectoryLoader(
@@ -124,7 +124,7 @@ def build_vector_database(docs_dir=DOCS_DIR, chroma_db_dir=CHROMA_DB_DIR):
     docs_to_process = filter_changed_documents(documents, vector_store)
 
     if not docs_to_process:
-        print("✅ No changed documents found. Vector database is up to date!")
+        print("[OK] No changed documents found. Vector database is up to date!")
         return
 
     # 4. Chunk changed documents
@@ -137,7 +137,7 @@ def build_vector_database(docs_dir=DOCS_DIR, chroma_db_dir=CHROMA_DB_DIR):
     print(f"Inserting {len(final_chunks)} new chunks into Chroma DB...")
     vector_store.add_documents(documents=final_chunks)
     
-    print(f"✅ Successfully updated localized Vector Database at: ./{chroma_db_dir}/")
+    print(f"[OK] Successfully updated localized Vector Database at: ./{chroma_db_dir}/")
     
     # Release file locks
     del vector_store

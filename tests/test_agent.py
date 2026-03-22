@@ -11,7 +11,7 @@ def setup_agent_test_data():
     generate_structured_data()
     generate_unstructured_data()
     yield
-    # No teardown here, rely on global session teardown in conftest.py
+    # No teardown here, rely on session teardown in tests/conftest.py
 
 
 @pytest.mark.integration

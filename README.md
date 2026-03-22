@@ -10,14 +10,27 @@ This project is an advanced Retrieval-Augmented Generation (RAG) system built wi
 * **Idempotent Vector Insertion**: Implements a custom UPSERT strategy utilizing MD5 document hashing to guarantee the vector database is only populated with updated or new chunks, preventing hallucinations caused by duplications on rerun.
 
 ## Project Structure
+- `templates/mock_docs/`: **Source** markdown for ADRs and runbooks (edit here). Not ingested directly by the embedder.
 - `src/`: Core Python application logic and agents.
-  - `generate_mock_data.py`: Generates the raw `.md` documents and the SQLite databases.
-  - `build_vector_db.py`: Read documents, chunks them semantically, constructs embeddings, and stores them in a local Chroma vector database.
-- `tests/`: Comprehensive Pytest unit tests for logical guarantees.
-- `conftest.py`: Root-level path configuration so `tests/` can easily import `src/` modules.
-- `DECISIONS.md`: A live architectural decisions log explaining the "why" behind framework choices.
+  - `generate_mock_data.py`: Copies templates into `docs/`, creates `engineering_data.db`.
+  - `build_vector_db.py`: Reads `docs/`, chunks and embeds into `chroma_db/`.
+- `main.py`: Interactive CLI — run after mock data and vector DB are built.
+- `tests/`: Pytest suite (unit + integration).
+  - `tests/eval/`: LangSmith `evaluate()` golden-set tests (`langsmith` is listed in `requirements.txt`).
+- `tests/conftest.py`: Adds the repo root to `sys.path`, loads repo-root `.env`, session teardown for DB connections.
+- `DECISIONS.md`: Architectural decisions log.
 
-*Note: Automatically generated database folders (`docs/`, `chroma_db/`, `engineering_data.db`) are ignored by git.*
+*Note: Generated artifacts (`docs/`, `chroma_db/`, `engineering_data.db`) are gitignored—do not treat `docs/` as the canonical copy of markdown; change templates and regenerate.*
+
+### Data pipeline
+
+1. **Templates** (`templates/mock_docs/adrs`, `.../runbooks`) hold the real ADR/runbook text.  
+2. **`generate_mock_data.py`** copies them to **`docs/`** and (re)builds **`engineering_data.db`**.  
+3. **`build_vector_db.py`** reads **`docs/`** and writes **`chroma_db/`** (embeddings).  
+
+After you change any file under `templates/mock_docs/`, run steps 2–3 again so `docs/` and Chroma stay in sync.
+
+**Windows:** If deleting `chroma_db/` or `engineering_data.db` fails (“file in use”), exit any Python session using the app or call `close_connections()` from `src.agent`, then retry.
 
 ## Setup Instructions
 
@@ -42,6 +55,7 @@ This project is an advanced Retrieval-Augmented Generation (RAG) system built wi
    ```bash
    pip install -r requirements.txt
    ```
+   This includes `langchain`, `chromadb`, `pytest`, and `langsmith` (for offline evals in `tests/eval/`).
 
 4. **Configure environment:**
    Copy `.env.example` to `.env` and set your keys:
@@ -67,13 +81,19 @@ This generates a `docs/` folder containing dummy ADRs and Runbooks, and initiali
 ```bash
 python src/build_vector_db.py
 ```
-This script processes the markdown files, calculates their hashes, transforms them recursively into chunks, and stores their embeddings in a local `chroma_db/` directory. 
+This script processes the markdown files, calculates their hashes, transforms them recursively into chunks, and stores their embeddings in a local `chroma_db/` directory.
+
+**Step 3: Run the copilot (interactive)**
+```bash
+python main.py
+```
+Type `exit` or `quit` to leave the chat loop.
 
 ## Running Tests
 
 **Quick run (no API key or built DB required)** — runs unit tests only (e.g. data generation, chunking, metadata):
 ```bash
-pytest tests/ -v -m "not integration"
+pytest tests/ -v -m "not integration and not langsmith_eval"
 ```
 
 **Full test suite** — integration tests need `OPENAI_API_KEY` and a built vector DB. One-time setup:
@@ -89,6 +109,20 @@ pytest tests/ -v -m "not integration"
    ```
 
 Integration tests (agent routing, vector search, Chroma connectivity) are marked with `@pytest.mark.integration` and are skipped when the API key is missing or when `chroma_db/` does not exist.
+
+### LangSmith evaluations (offline)
+
+Golden-set evaluations use LangSmith’s [`evaluate()`](https://docs.smith.langchain.com/evaluation) API (same pattern as the *Intro to LangSmith* course: target function + row evaluators). They live under `tests/eval/`, are marked `@pytest.mark.langsmith_eval`, and are **skipped** unless `OPENAI_API_KEY`, `LANGSMITH_API_KEY`, `engineering_data.db`, and `chroma_db/` are all present. `tests/conftest.py` loads `.env` from the **repository root** (next to `README.md`) before tests import `src.*`, regardless of pytest’s working directory.
+
+After mock data and the vector DB are built:
+
+```bash
+pytest tests/eval/ -v -m langsmith_eval
+```
+
+Optional: `EAC_EVAL_MIN_SCORE` (default `0.5`) sets the minimum acceptable `keyword_coverage` score per example.
+
+**CI:** `.github/workflows/ci.yml` runs unit tests on every push/PR, then runs the LangSmith eval job when the workflow has access to secrets (same-repo PRs and pushes). Configure repository secrets `OPENAI_API_KEY` and `LANGSMITH_API_KEY`. If either secret is missing, the eval step exits successfully without running tests (so CI stays green). Eval traces go to the project named by `LANGSMITH_PROJECT` (the workflow sets `enterprise-arch-copilot-eval`).
 
 ## Observability (LangSmith)
 
