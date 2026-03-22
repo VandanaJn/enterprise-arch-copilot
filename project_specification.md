@@ -7,6 +7,8 @@
 
 A hybrid RAG system that acts as an intelligent technical advisor. It combines structured metadata (service catalog, API endpoints) with unstructured engineering documentation (ADRs, runbooks) so engineers can ask questions and get answers that draw from both sources.
 
+**Incident-first workflow:** The runtime is a **supervisor LangGraph**. A lightweight **triage** step classifies each turn as **incident** (outages, error codes, endpoint failures, who-to-page) or **general** (ADRs, design rationale, simple catalog lookups). Incident turns run a **multi-step chain**: SQL-only agent (catalog / endpoints) → vector-only agent (runbooks) → **synthesis** into a structured **incident brief**. General turns use a single ReAct-style agent with all tools, matching the original routing behavior.
+
 ## Data Sources
 
 ### 1. Structured Data (SQLite)
@@ -23,14 +25,29 @@ Documents are chunked semantically, embedded, and stored in a local ChromaDB wit
 
 1.  **Pure unstructured (vector) search**
     *   *Query:* "What was the rationale behind migrating our payment gateway to the new AWS architecture?"
-    *   *Action:* The agent routes to the vector DB tool, retrieves relevant ADR chunks, and summarizes the "why".
+    *   *Action:* Triage routes to the **general** agent; it uses the vector tool, retrieves relevant ADR chunks, and summarizes the "why".
 
 2.  **Pure structured (SQL) search**
     *   *Query:* "Who is the owner of the user-profile-service and what is the current deployed version?"
-    *   *Action:* The agent routes to the SQL tool, runs a SELECT against the service catalog, and returns team and version.
+    *   *Action:* Triage routes to the **general** agent; it queries SQLite and returns team and version.
 
-3.  **Hybrid search**
+3.  **Hybrid / incident search**
     *   *Query:* "The /api/v1/checkout endpoint is failing with a 504 timeout. Who do I contact, and what is the runbook to mitigate this?"
-    *   *Action:* The agent queries SQL to find which service owns the endpoint and who owns it, then queries the vector DB for runbooks for that service, and returns a consolidated answer with contact and steps.
+    *   *Action:* Triage routes to **incident** flow: SQL tools resolve service and ownership, vector tools retrieve runbook chunks, then synthesis produces an **incident brief** (summary, ownership/paging, mitigation steps, evidence, gaps).
 
-The agent is a single LangGraph router with three tools: search over engineering docs (vector), query the SQL database, and list all services (for discovery). It chooses which tool(s) to use based on the user question.
+### Incident brief (incident path)
+
+Final replies follow a consistent template: **Summary**, **Ownership / paging**, **Runbook / mitigation steps**, **Evidence**, **Gaps**—grounded only in tool output; missing data is called out explicitly.
+
+## Future data sources (backlog)
+
+Optional ingestion ideas for a later phase (not required for the current mock corpus):
+
+* Postmortems or incident timelines (new doc type + metadata).
+* SLO / error-budget tables or links to dashboards (structured or semi-structured).
+* Escalation policies or PagerDuty integration IDs (structured).
+* OpenAPI / protobuf snippets per service (structured or vector with `document_type`).
+
+## Implementation note
+
+Graph and tools live in `src/agent.py`; triage schema and pure routing helpers live in `src/incident_workflow.py` for unit testing without LLM calls.

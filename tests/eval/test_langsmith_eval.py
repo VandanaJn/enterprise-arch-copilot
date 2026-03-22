@@ -113,6 +113,14 @@ EVAL_EXAMPLES = [
         "outputs": {"keywords": ["v1.4.2", "checkout"]},
     },
     {
+        "inputs": {
+            "question": (
+                "We're seeing 504s on checkout in prod. Who owns the service and what's the mitigation?"
+            )
+        },
+        "outputs": {"keywords": ["alpha", "mitigation"]},
+    },
+    {
         "inputs": {"question": "Why did we adopt Kafka for event streaming?"},
         "outputs": {"keywords": ["kafka", "event"]},
     },
@@ -163,7 +171,9 @@ def test_langsmith_evaluate_copilot(ephemeral_eval_dataset):
         max_concurrency=1,
     )
 
-    assert len(results) == len(EVAL_EXAMPLES)
+    assert len(results) == len(EVAL_EXAMPLES), (
+        f"expected {len(EVAL_EXAMPLES)} eval rows, got {len(results)}"
+    )
     for row in results:
         ev = row["evaluation_results"]
         assert ev is not None

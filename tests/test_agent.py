@@ -4,6 +4,23 @@ from langchain_core.messages import HumanMessage
 from src.agent import search_engineering_docs, query_sql_database, create_enterprise_copilot, close_connections
 from src.generate_mock_data import generate_structured_data, generate_unstructured_data, create_directories
 
+
+def _collect_tool_calls_from_stream(graph, inputs):
+    """Gather tool names from any node update in the graph stream (supervisor topology)."""
+    tool_calls = []
+    for chunk in graph.stream(inputs):
+        for _node_name, node_data in chunk.items():
+            if not isinstance(node_data, dict) or "messages" not in node_data:
+                continue
+            for msg in node_data["messages"]:
+                if hasattr(msg, "tool_calls") and msg.tool_calls:
+                    for tc in msg.tool_calls:
+                        tool_calls.append(tc["name"])
+                elif hasattr(msg, "name") and msg.name:
+                    tool_calls.append(msg.name)
+    return tool_calls
+
+
 @pytest.fixture(scope="module", autouse=True)
 def setup_agent_test_data():
     """Ensure mock data exists for agent tests."""
@@ -40,20 +57,7 @@ def test_agent_routes_to_vector():
     agent = create_enterprise_copilot()
     
     inputs = {"messages": [HumanMessage(content="Why did we start using Kafka?")]}
-    
-    # Track which tools were called
-    tool_calls = []
-    for chunk in agent.stream(inputs):
-        # In our new StateGraph, chunks are keyed by node name ('agent')
-        if "agent" in chunk:
-            for msg in chunk["agent"]["messages"]:
-                if hasattr(msg, "tool_calls") and msg.tool_calls:
-                    for tc in msg.tool_calls:
-                        tool_calls.append(tc["name"])
-                elif hasattr(msg, "name") and msg.name:
-                    # In case of ToolMessage
-                    tool_calls.append(msg.name)
-                
+    tool_calls = _collect_tool_calls_from_stream(agent, inputs)
     # Assert the agent decided to use our vector search tool
     assert "search_engineering_docs" in tool_calls
 
@@ -63,18 +67,7 @@ def test_agent_routes_to_sql():
     agent = create_enterprise_copilot()
     
     inputs = {"messages": [HumanMessage(content="What version is the order-service currently on?")]}
-    
-    # Track which tools were called
-    tool_calls = []
-    for chunk in agent.stream(inputs):
-        if "agent" in chunk:
-            for msg in chunk["agent"]["messages"]:
-                if hasattr(msg, "tool_calls") and msg.tool_calls:
-                    for tc in msg.tool_calls:
-                        tool_calls.append(tc["name"])
-                elif hasattr(msg, "name") and msg.name:
-                    tool_calls.append(msg.name)
-                
+    tool_calls = _collect_tool_calls_from_stream(agent, inputs)
     # Assert the agent decided to use our SQL querying tool
     # (Note: Could also be SQLDatabaseToolkit's specific tool name, but we look for routing intent)
     assert any("sql" in tool.lower() for tool in tool_calls)
@@ -90,15 +83,7 @@ def test_agent_hybrid_search():
     # 2. Vector search to find the 504 mitigation runbook for checkout-service
     content = "The /api/v1/checkout endpoint is failing with a 504. Who owns it and is there a runbook for it?"
     inputs = {"messages": [HumanMessage(content=content)]}
-    
-    tool_calls = []
-    for chunk in agent.stream(inputs):
-        if "agent" in chunk:
-            for msg in chunk["agent"]["messages"]:
-                if hasattr(msg, "tool_calls") and msg.tool_calls:
-                    for tc in msg.tool_calls:
-                        tool_calls.append(tc["name"].lower())
-    
+    tool_calls = [t.lower() for t in _collect_tool_calls_from_stream(agent, inputs)]
     # Assert both tools were considered/invoked
     assert any("sql" in tool for tool in tool_calls)
     assert "search_engineering_docs" in tool_calls

@@ -8,10 +8,13 @@ This project is an advanced Retrieval-Augmented Generation (RAG) system built wi
 * **Semantic Chunking**: Employs LangChain's `SemanticChunker` to semantically divide raw markdown documentation.
 * **Hybrid Search Ready**: Injects unstructured documents with explicit metadata (e.g. `document_type: adr`) for targeted exact-match filtering alongside semantic similarity.
 * **Idempotent Vector Insertion**: Implements a custom UPSERT strategy utilizing MD5 document hashing to guarantee the vector database is only populated with updated or new chunks, preventing hallucinations caused by duplications on rerun.
+* **Incident-first supervisor graph**: LangGraph triage routes *incident* questions through SQL-only and vector-only sub-agents, then synthesizes an incident brief; other questions use a single agent with all tools (see `project_specification.md`).
 
 ## Project Structure
 - `templates/mock_docs/`: **Source** markdown for ADRs and runbooks (edit here). Not ingested directly by the embedder.
 - `src/`: Core Python application logic and agents.
+  - `agent.py`: Supervisor graph, tools, and prompts.
+  - `incident_workflow.py`: Triage schema and pure helpers (unit-tested).
   - `generate_mock_data.py`: Copies templates into `docs/`, creates `engineering_data.db`.
   - `build_vector_db.py`: Reads `docs/`, chunks and embeds into `chroma_db/`.
 - `main.py`: Interactive CLI — run after mock data and vector DB are built.
@@ -31,6 +34,8 @@ This project is an advanced Retrieval-Augmented Generation (RAG) system built wi
 After you change any file under `templates/mock_docs/`, run steps 2–3 again so `docs/` and Chroma stay in sync.
 
 **Windows:** If deleting `chroma_db/` or `engineering_data.db` fails (“file in use”), exit any Python session using the app or call `close_connections()` from `src.agent`, then retry.
+
+**ChromaDB “Could not connect to tenant default_tenant”:** Your `chroma_db/` directory is often empty, partial, or from a different ChromaDB version. Quit the copilot, delete `chroma_db/`, run `python src/build_vector_db.py` again (after `generate_mock_data` so `docs/` exists). If it still fails, reinstall deps: `pip install -r requirements.txt`.
 
 ## Setup Instructions
 
