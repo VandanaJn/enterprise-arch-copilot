@@ -9,4 +9,5 @@ SQLAlchemy
 pydantic
 chromadb
 python-dotenv
+tenacity
 pytest

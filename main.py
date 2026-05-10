@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 from src.agent import create_enterprise_copilot, close_connections
@@ -10,21 +11,25 @@ load_dotenv()
 async def chat_loop():
     print("\n--- Enterprise Architecture Copilot ---")
     print("Type 'exit' or 'quit' to stop.\n")
-    
+
+    # Per-session thread_id so multiple users don't share conversation state
+    # if a checkpointer is wired in later.
+    thread_id = str(uuid.uuid4())
+    print(f"Session id: {thread_id}\n")
+
     # Initialize the compiled LangGraph agent
     agent = create_enterprise_copilot()
-    
+
     while True:
         try:
             user_input = input("You: ")
             if user_input.lower() in ["exit", "quit"]:
                 break
-                
+
             # Initial state for the graph
             inputs = {"messages": [HumanMessage(content=user_input)]}
-            
-            # Use a thread_id for persistence (though we're not using a checkpointer yet here)
-            config = {"configurable": {"thread_id": "local_test_user"}}
+
+            config = {"configurable": {"thread_id": thread_id}}
             
             print("\nCopilot: ", end="", flush=True)
             

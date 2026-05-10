@@ -1,12 +1,12 @@
 # Architecture & Technology Decisions Log
 
-This document tracks the rationale behind our technical choices for the Engineering Documentation Contextual Router project. We maintain this to follow Staff-level engineering practices of documenting "why" we choose specific tools.
+This document tracks the rationale behind key technical choices for the Enterprise Architecture Copilot.
 
 ## 1. Project Initialization & Dependencies
 
 ### Python Virtual Environment (`venv`)
 *   **Decision:** Use standard Python `venv` with a `requirements.txt`.
-*   **Rationale:** Keeps dependencies isolated and makes the project easily reproducible for reviewers.
+*   **Rationale:** Keeps dependencies isolated and makes the project easily reproducible.
 
 ### LangChain Ecosystem (`langchain`, `langgraph`, `langsmith`)
 *   **Decision:** Build the agentic routing logic using LangChain v0.3.x and LangGraph.
@@ -34,7 +34,7 @@ This document tracks the rationale behind our technical choices for the Engineer
     *   **True Semantic Chunking** embeds every sentence and calculates the cosine distance between them. It groups sentences together into a chunk until the semantic meaning drastically shifts (a "breakpoint"), at which point it starts a new chunk.
     *   **Chunk Size:** Unlike structural splitter, there is **no fixed chunk size** (like 1000 characters). The chunk size is completely variable and is determined dynamically by the meaning of the text. If an architectural explanation is 3 sentences, the chunk is 3 sentences. If the explanation takes 15 sentences before moving to a new topic, the chunk is 15 sentences. You control the length indirectly by adjusting the breakpoint threshold (e.g., `breakpoint_threshold_type="percentile"`).
     *   **Fallback Limit:** We still combine this with a structural splitter as a fallback to enforce a hard maximum limit (e.g., 2000 characters) to protect LLM context windows in cases where a topic never shifts.
-    *   **Why this matters:** Unlike arbitrary character limits which might split related thoughts, the `SemanticChunker` guarantees that all text within a chunk is contextually related. This is an advanced technique that significantly improves retrieval accuracy in RAG systems, perfect for Staff-level architecture discussions.
+    *   **Why this matters:** Unlike arbitrary character limits which might split related thoughts, the `SemanticChunker` guarantees that all text within a chunk is contextually related. This significantly improves retrieval accuracy in RAG systems.
 
 ### Embedding Model (`OpenAIEmbeddings`)
 *   **Decision:** We are using LangChain's default OpenAI embedding configuration, which resolves to high-dimensionality models (like `text-embedding-ada-002` or `text-embedding-3-small`).
@@ -42,7 +42,7 @@ This document tracks the rationale behind our technical choices for the Engineer
     *   **High Dimensionality (1536 dimensions):** OpenAI models generate 1536-dimensional vectors. This massive semantic space allows the model to capture highly complex, nuanced engineering concepts (e.g., the architectural differences between Kafka vs. RabbitMQ). 
     *   **Compared to Low Dimensionality (e.g., 384 dimensions):** Smaller, local open-source models (like `all-MiniLM-L6-v2`) are much faster and cheaper to run, but they often collapse complex comparative topics into generic buckets (e.g., just "messaging systems"), reducing RAG accuracy for Staff-level architecture queries.
     *   **The Trade-off (Cost vs. Accuracy):** 1536-dimensional vectors take 4x the RAM and storage in a vector database compared to 384-dimensional vectors, and computing cosine distance at query time is mathematically heavier. For enterprise scale (millions of docs), this strictly increases cloud vector DB hosting costs.
-    *   **Why Hosted OpenAI over Local Open-Source (e.g., BAAI/bge-large)?** While models like `bge-large` (1024 dimensions) often beat OpenAI on retrieval benchmarks and offer data privacy, hosting them locally requires PyTorch dependency management and hardware acceleration (GPUs). For our specific goal (an interview demonstration of an Agentic Router), a reliable, hosted API eliminates unnecessary infrastructure complexity.
+    *   **Why Hosted OpenAI over Local Open-Source (e.g., BAAI/bge-large)?** While models like `bge-large` (1024 dimensions) often beat OpenAI on retrieval benchmarks and offer data privacy, hosting them locally requires PyTorch dependency management and hardware acceleration (GPUs). A reliable, hosted API eliminates that infrastructure complexity for this use case.
     *   *(Note: Newer models like OpenAI's `text-embedding-3` support "Matryoshka embeddings", allowing developers to truncate the 1536 dimensions down to 512 dimensions while retaining almost all accuracy, effectively solving the storage cost trade-off).*
 
 ### Deduplication via MD5 Hashing (UPSERT)

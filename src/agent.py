@@ -1,16 +1,19 @@
+import logging
 import operator
-import os
+import threading
 from typing import Annotated, NotRequired, Sequence, TypedDict
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.utilities import SQLDatabase
 from langgraph.graph import END, START, StateGraph
+from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 
+from src import config
 from src.incident_workflow import (
     TriageResult,
     extract_final_assistant_text,
@@ -20,59 +23,69 @@ from src.incident_workflow import (
 
 load_dotenv()
 
-# Paths
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_FILE = os.path.join(ROOT_DIR, "engineering_data.db")
-CHROMA_DB_DIR = os.path.join(ROOT_DIR, "chroma_db")
+logger = logging.getLogger(__name__)
 
-# Global instances (initialize lazily or via a factory pattern for production, but global is fine for this demo)
+# Lazy singletons for the embedding/vector/SQL clients. A single lock guards
+# all three so close_connections() and cache invalidation are safe from any node.
 embeddings = None
 vector_store = None
 sql_db = None
+_state_lock = threading.Lock()
 
 
 def _clear_vector_store_cache() -> None:
     """Drop cached Chroma client so a rebuild on disk can be picked up."""
     global embeddings, vector_store
-    embeddings = None
-    vector_store = None
+    with _state_lock:
+        embeddings = None
+        vector_store = None
 
 
 def get_vector_store():
     global embeddings, vector_store
-    if vector_store is None:
-        embeddings = OpenAIEmbeddings()
-        vector_store = Chroma(
-            persist_directory=CHROMA_DB_DIR,
-            embedding_function=embeddings,
-        )
-    return vector_store
+    with _state_lock:
+        if vector_store is None:
+            embeddings = OpenAIEmbeddings()
+            vector_store = Chroma(
+                persist_directory=config.chroma_dir(),
+                embedding_function=embeddings,
+            )
+        return vector_store
 
 
 def get_sql_db():
     global sql_db
-    if sql_db is None:
-        formatted_path = DB_FILE.replace("\\", "/")
-        db_uri = f"sqlite:///{formatted_path}"
-        sql_db = SQLDatabase.from_uri(db_uri)
-    return sql_db
+    with _state_lock:
+        if sql_db is None:
+            formatted_path = config.db_file().replace("\\", "/")
+            sql_db = SQLDatabase.from_uri(f"sqlite:///{formatted_path}")
+        return sql_db
 
 
 def close_connections():
-    """Close SQL and Vector DB connections to release file locks (primarily for Windows/Tests)."""
-    global sql_db, vector_store
-
-    if sql_db:
-        try:
-            sql_db._engine.dispose()
-        except Exception:
-            pass
-        sql_db = None
-
-    if vector_store:
+    """Close SQL and Vector DB connections to release file locks (Windows/tests)."""
+    global sql_db, vector_store, embeddings
+    with _state_lock:
+        if sql_db is not None:
+            try:
+                sql_db._engine.dispose()
+            except Exception:
+                logger.exception("Failed to dispose SQL engine cleanly")
+            sql_db = None
         vector_store = None
-
+        embeddings = None
     print("Closed database connections.")
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=8),
+    retry=retry_if_not_exception_type((KeyboardInterrupt, SystemExit)),
+    reraise=True,
+)
+def _invoke_with_retry(runnable, inputs):
+    """Wrap an LLM/runnable invocation with bounded retry for transient errors."""
+    return runnable.invoke(inputs)
 
 
 @tool
@@ -87,8 +100,8 @@ def search_engineering_docs(query: str) -> str:
         _clear_vector_store_cache()
         err = str(e)
         hint = (
-            "Fix: exit this app, delete the chroma_db folder at the project root, run "
-            "`python src/generate_mock_data.py` then `python src/build_vector_db.py`, and try again."
+            "Fix: exit this app, delete the chroma_db folder at the project root, "
+            "run `make setup` (or `python -m scripts.setup`), and try again."
         )
         if "tenant" in err.lower() or "default_tenant" in err:
             hint = (
@@ -124,7 +137,7 @@ def query_sql_database(query: str) -> str:
 
 
 @tool
-def list_all_services(query: str = "") -> str:
+def list_all_services() -> str:
     """Returns a list of all service names currently available in the engineering service catalog.
     Use this if a user asks about a service that returns no results in query_sql_database, so you can discover the correct name.
     """
@@ -136,28 +149,81 @@ def list_all_services(query: str = "") -> str:
         return f"Error listing services: {str(e)}"
 
 
+@tool
+def query_incidents(service_name: str = "", limit: int = 10) -> str:
+    """Returns recent incidents from the incident log, optionally filtered by service name.
+    Each row includes severity, time window, a one-line summary, and the postmortem ID (if any).
+    Use this when the user asks about historical incidents, recent outages, or what's been
+    happening on a service. For deeper context, follow up by searching for the postmortem
+    document via search_engineering_docs.
+    """
+    db = get_sql_db()
+    try:
+        if service_name:
+            sql = (
+                "SELECT i.severity, i.started_at, i.ended_at, s.name, i.summary, i.postmortem_id "
+                "FROM incidents i JOIN service_catalog s ON i.service_id = s.id "
+                f"WHERE s.name LIKE '%{service_name}%' "
+                f"ORDER BY i.started_at DESC LIMIT {int(limit)}"
+            )
+        else:
+            sql = (
+                "SELECT i.severity, i.started_at, i.ended_at, s.name, i.summary, i.postmortem_id "
+                "FROM incidents i JOIN service_catalog s ON i.service_id = s.id "
+                f"ORDER BY i.started_at DESC LIMIT {int(limit)}"
+            )
+        result = db.run(sql)
+        return f"Incidents (severity, started_at, ended_at, service, summary, postmortem_id): {result}"
+    except Exception as e:
+        return f"Error querying incidents: {str(e)}"
+
+
+def _build_incident_prompt(
+    header: str,
+    user_text: str,
+    triage: dict,
+    *,
+    sections: dict[str, str] | None = None,
+    tail: str = "",
+) -> str:
+    """Compose the human-message prompt sent to an incident sub-agent."""
+    parts = [header, f"User report:\n{user_text}", f"Triage JSON:\n{triage}"]
+    for label, value in (sections or {}).items():
+        if value:
+            parts.append(f"{label}:\n{value}")
+    if tail:
+        parts.append(tail)
+    return "\n\n".join(parts)
+
+
 # --- Prompts shared by general and subgraph agents ---
 
 _DB_SCHEMA = """**Database Schema:**
-- `service_catalog` table: `id`, `name` (the service name), `owner_team`, `version`, `oncall_rotation`, `repository_url`.
-- `api_endpoints` table: `id`, `path`, `service_id` (FK to service_catalog), `method`, `description`."""
+- `service_catalog` table: `id`, `name`, `owner_team`, `version`, `oncall_rotation`, `repository_url`,
+  `criticality_tier` (`tier-0`/`tier-1`/`tier-2`), `deprecated` (0 or 1), `language`.
+- `api_endpoints` table: `id`, `path`, `service_id` (FK to service_catalog), `method`, `description`.
+- `incidents` table: `id`, `service_id` (FK), `started_at` (ISO timestamp), `ended_at`, `severity`
+  (`SEV-1`/`SEV-2`/`SEV-3`), `summary`, `postmortem_id` (e.g. `PM-2024-001`, may be NULL)."""
 
 _GROUNDING = """**Guidelines:**
 - **Ground your answers**: Answer only using information returned by the tools. Do not use general knowledge to fill gaps.
+- **Decline out-of-scope questions**: If the user asks about something unrelated to PayLane's services, infrastructure, ADRs, runbooks, postmortems, or incidents (e.g. weather, jokes, general programming help), politely decline and remind them what you can help with.
 - **When no docs are found**: Say clearly that no relevant document was found. Do not invent an answer.
 - **When SQL has no rows**: Say so; do not make up service or endpoint data.
+- **Supersession awareness**: ADRs include `supersedes` / `superseded_by` frontmatter. When asked about a current decision, prefer the latest non-superseded ADR.
 - **Robust SQL**: If a user provides a partial service name, use `LIKE '%name%'` when needed.
 - **Service discovery**: If SQL returns no rows, use `list_all_services` to find the correct name.
 - Be concise and technical."""
 
 GENERAL_SYSTEM_PROMPT = SystemMessage(
-    content=f"""You are an Enterprise Architecture Copilot.
-You help engineers find context about systems, runbooks, and architectures.
+    content=f"""You are an Enterprise Architecture Copilot for PayLane (a payment-processing SaaS).
+You help engineers find context about systems, runbooks, ADRs, postmortems, design docs, and historical incidents.
 
-You have access to three tools:
-1. `search_engineering_docs`: ADRs and runbooks (unstructured).
-2. `query_sql_database`: Structured SQLite metadata.
+You have access to four tools:
+1. `search_engineering_docs`: ADRs, runbooks, postmortems, design docs (unstructured markdown).
+2. `query_sql_database`: Structured SQLite metadata (services, endpoints, incidents).
 3. `list_all_services`: Full list of service names.
+4. `query_incidents`: Historical incidents, optionally filtered by service name.
 
 {_DB_SCHEMA}
 
@@ -224,8 +290,8 @@ def create_enterprise_copilot():
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
     triage_llm = llm.with_structured_output(TriageResult)
 
-    all_tools = [search_engineering_docs, query_sql_database, list_all_services]
-    sql_tools = [query_sql_database, list_all_services]
+    all_tools = [search_engineering_docs, query_sql_database, list_all_services, query_incidents]
+    sql_tools = [query_sql_database, list_all_services, query_incidents]
     doc_tools = [search_engineering_docs]
 
     general_agent = create_agent(llm, tools=all_tools, system_prompt=GENERAL_SYSTEM_PROMPT)
@@ -235,55 +301,48 @@ def create_enterprise_copilot():
     def triage_node(state: AgentState):
         try:
             triage_messages = [TRIAGE_SYSTEM_PROMPT, *state["messages"]]
-            res = triage_llm.invoke(triage_messages)
-            if isinstance(res, TriageResult):
-                tr = res
-            else:
-                tr = TriageResult(mode="general")
+            res = _invoke_with_retry(triage_llm, triage_messages)
+            tr = res if isinstance(res, TriageResult) else TriageResult(mode="general")
         except Exception:
+            logger.exception("Triage LLM failed; defaulting to general mode")
             tr = TriageResult(mode="general")
         return {"mode": tr.mode, "triage": tr.model_dump()}
 
     def structured_agent_node(state: AgentState):
-        user_text = latest_user_text(state["messages"])
-        triage = state.get("triage") or {}
-        prompt = (
-            "Incident metadata lookup.\n\n"
-            f"User report:\n{user_text}\n\n"
-            f"Triage JSON:\n{triage}\n\n"
-            "Use SQL tools to resolve services, endpoints, owners, versions, and on-call. "
-            "Then summarize facts in plain text."
+        prompt = _build_incident_prompt(
+            "Incident metadata lookup.",
+            latest_user_text(state["messages"]),
+            state.get("triage") or {},
+            tail=(
+                "Use SQL tools to resolve services, endpoints, owners, versions, and on-call. "
+                "Then summarize facts in plain text."
+            ),
         )
         out = structured_agent.invoke({"messages": [HumanMessage(content=prompt)]})
         findings = extract_final_assistant_text(out["messages"]) or "(no structured findings)"
         return {"messages": out["messages"], "structured_findings": findings}
 
     def runbook_agent_node(state: AgentState):
-        user_text = latest_user_text(state["messages"])
-        structured = state.get("structured_findings") or ""
-        triage = state.get("triage") or {}
-        prompt = (
-            "Runbook and documentation search for this incident.\n\n"
-            f"User report:\n{user_text}\n\n"
-            f"Triage JSON:\n{triage}\n\n"
-            f"Structured catalog findings:\n{structured}\n\n"
-            "Call search_engineering_docs with queries that include service names and symptom keywords."
+        prompt = _build_incident_prompt(
+            "Runbook and documentation search for this incident.",
+            latest_user_text(state["messages"]),
+            state.get("triage") or {},
+            sections={"Structured catalog findings": state.get("structured_findings") or ""},
+            tail="Call search_engineering_docs with queries that include service names and symptom keywords.",
         )
         out = runbook_agent.invoke({"messages": [HumanMessage(content=prompt)]})
         findings = extract_final_assistant_text(out["messages"]) or "(no runbook snippets)"
         return {"messages": out["messages"], "runbook_findings": findings}
 
     def synthesize_node(state: AgentState):
-        user_text = latest_user_text(state["messages"])
-        structured = state.get("structured_findings") or ""
-        runbook = state.get("runbook_findings") or ""
         human = HumanMessage(
             content=(
-                f"User question:\n{user_text}\n\n---\nStructured findings:\n{structured}\n\n"
-                f"---\nRunbook/documentation findings:\n{runbook}"
+                f"User question:\n{latest_user_text(state['messages'])}\n\n"
+                f"---\nStructured findings:\n{state.get('structured_findings') or ''}\n\n"
+                f"---\nRunbook/documentation findings:\n{state.get('runbook_findings') or ''}"
             )
         )
-        resp = llm.invoke([SYNTHESIZE_SYSTEM_PROMPT, human])
+        resp = _invoke_with_retry(llm, [SYNTHESIZE_SYSTEM_PROMPT, human])
         return {"messages": [resp]}
 
     def general_agent_node(state: AgentState):

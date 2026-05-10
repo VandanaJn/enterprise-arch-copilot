@@ -1,8 +1,5 @@
 # The Enterprise Integration & Architecture Copilot
 
-**Target Audience:** Staff / Lead Software Engineers
-**Focus:** Large-scale distributed systems, APIs, and operational knowledge.
-
 ## Overview
 
 A hybrid RAG system that acts as an intelligent technical advisor. It combines structured metadata (service catalog, API endpoints) with unstructured engineering documentation (ADRs, runbooks) so engineers can ask questions and get answers that draw from both sources.
