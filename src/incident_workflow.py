@@ -11,10 +11,12 @@ from pydantic import BaseModel, Field
 class TriageResult(BaseModel):
     """Structured output from the triage LLM step."""
 
-    mode: Literal["incident", "general"] = Field(
+    mode: Literal["incident", "general", "out_of_scope"] = Field(
         ...,
         description='Use "incident" for outages, errors, HTTP codes, latency, '
-        "endpoint/path failures, or who-to-page. Use general for ADRs, design rationale, or catalog-only lookups.",
+        "endpoint/path failures, or who-to-page. Use general for ADRs, design rationale, "
+        'or catalog-only lookups. Use "out_of_scope" for questions unrelated to PayLane '
+        "(weather, jokes, recipes, generic programming help, world knowledge).",
     )
     endpoint_hint: str | None = Field(
         default=None,
@@ -30,10 +32,14 @@ class TriageResult(BaseModel):
     )
 
 
-def route_target_for_mode(mode: str | None) -> Literal["structured_agent", "general_agent"]:
+def route_target_for_mode(
+    mode: str | None,
+) -> Literal["structured_agent", "general_agent", "decline_node"]:
     """Graph conditional edge: where to go after triage."""
     if mode == "incident":
         return "structured_agent"
+    if mode == "out_of_scope":
+        return "decline_node"
     return "general_agent"
 
 

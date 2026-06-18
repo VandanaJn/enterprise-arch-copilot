@@ -1,16 +1,19 @@
 import logging
 import operator
+import re
+import sqlite3
 import threading
 from typing import Annotated, NotRequired, Sequence, TypedDict
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_chroma import Chroma
-from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.utilities import SQLDatabase
 from langgraph.graph import END, START, StateGraph
+from sqlalchemy import create_engine, text as sql_text
 from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 
 from src import config
@@ -30,6 +33,7 @@ logger = logging.getLogger(__name__)
 embeddings = None
 vector_store = None
 sql_db = None
+_prompt_injection_pipeline = None
 _state_lock = threading.Lock()
 
 
@@ -57,8 +61,13 @@ def get_sql_db():
     global sql_db
     with _state_lock:
         if sql_db is None:
-            formatted_path = config.db_file().replace("\\", "/")
-            sql_db = SQLDatabase.from_uri(f"sqlite:///{formatted_path}")
+            uri = f"file:{config.db_file().replace(chr(92), '/')}?mode=ro"
+
+            def _connect():
+                return sqlite3.connect(uri, uri=True, check_same_thread=False)
+
+            engine = create_engine("sqlite://", creator=_connect)
+            sql_db = SQLDatabase(engine=engine)
         return sql_db
 
 
@@ -75,6 +84,42 @@ def close_connections():
         vector_store = None
         embeddings = None
     print("Closed database connections.")
+
+
+def _get_prompt_injection_detector():
+    """Lazy-load the ProtectAI prompt-injection classifier (HF pipeline)."""
+    global _prompt_injection_pipeline
+    with _state_lock:
+        if _prompt_injection_pipeline is None:
+            from transformers import pipeline
+
+            _prompt_injection_pipeline = pipeline(
+                "text-classification",
+                model=config.prompt_injection_model(),
+                truncation=True,
+                max_length=512,
+            )
+        return _prompt_injection_pipeline
+
+
+def detect_prompt_injection(text: str) -> tuple[bool, float]:
+    """Return (is_injection, score).
+
+    Fails open on detector errors so a model-load failure doesn't take down the
+    whole agent — we log and let the request through.
+    """
+    if not text.strip():
+        return False, 0.0
+    try:
+        detector = _get_prompt_injection_detector()
+        result = detector(text)[0]
+        label = str(result.get("label", "")).upper()
+        score = float(result.get("score", 0.0))
+        threshold = config.prompt_injection_threshold()
+        return (label == "INJECTION" and score >= threshold, score)
+    except Exception:
+        logger.exception("Prompt-injection detector failed; failing open")
+        return False, 0.0
 
 
 @retry(
@@ -123,11 +168,31 @@ def search_engineering_docs(query: str) -> str:
     return "\n\n".join(formatted_results)
 
 
+# Strips SQL line comments (-- ...) and block comments (/* ... */) so the
+# SELECT/WITH check can't be bypassed with leading comment noise.
+_SQL_COMMENT_RE = re.compile(r"--[^\n]*|/\*.*?\*/", re.DOTALL)
+_READONLY_SQL_ERROR = "Read-only mode: only SELECT/WITH statements are allowed."
+
+
+def _is_readonly_sql(query: str) -> bool:
+    """True when `query` is a single SELECT/WITH statement with no stacked statements."""
+    stripped = _SQL_COMMENT_RE.sub("", query).strip()
+    if not stripped:
+        return False
+    # Reject anything after the first terminating `;` (blocks stacked statements).
+    head, sep, tail = stripped.partition(";")
+    if sep and tail.strip():
+        return False
+    return bool(re.match(r"(?is)^\s*(select|with)\b", head))
+
+
 @tool
 def query_sql_database(query: str) -> str:
     """Use this tool to execute a read-only SQL SELECT query against the structured engineering metadata database.
     If you are unsure of the exact service name, use the SQL LIKE operator (e.g., name LIKE '%service%').
     """
+    if not _is_readonly_sql(query):
+        return _READONLY_SQL_ERROR
     db = get_sql_db()
     try:
         result = db.run(query)
@@ -149,6 +214,11 @@ def list_all_services() -> str:
         return f"Error listing services: {str(e)}"
 
 
+def _escape_like(value: str) -> str:
+    """Escape LIKE wildcards so a user-supplied name can't widen the match."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 @tool
 def query_incidents(service_name: str = "", limit: int = 10) -> str:
     """Returns recent incidents from the incident log, optionally filtered by service name.
@@ -158,21 +228,26 @@ def query_incidents(service_name: str = "", limit: int = 10) -> str:
     document via search_engineering_docs.
     """
     db = get_sql_db()
+    safe_limit = max(1, min(int(limit), 100))
+    base_sql = (
+        "SELECT i.severity, i.started_at, i.ended_at, s.name, i.summary, i.postmortem_id "
+        "FROM incidents i JOIN service_catalog s ON i.service_id = s.id"
+    )
     try:
-        if service_name:
-            sql = (
-                "SELECT i.severity, i.started_at, i.ended_at, s.name, i.summary, i.postmortem_id "
-                "FROM incidents i JOIN service_catalog s ON i.service_id = s.id "
-                f"WHERE s.name LIKE '%{service_name}%' "
-                f"ORDER BY i.started_at DESC LIMIT {int(limit)}"
-            )
-        else:
-            sql = (
-                "SELECT i.severity, i.started_at, i.ended_at, s.name, i.summary, i.postmortem_id "
-                "FROM incidents i JOIN service_catalog s ON i.service_id = s.id "
-                f"ORDER BY i.started_at DESC LIMIT {int(limit)}"
-            )
-        result = db.run(sql)
+        with db._engine.connect() as conn:
+            if service_name:
+                stmt = sql_text(
+                    f"{base_sql} WHERE s.name LIKE :pattern ESCAPE '\\' "
+                    f"ORDER BY i.started_at DESC LIMIT :limit"
+                )
+                params = {"pattern": f"%{_escape_like(service_name)}%", "limit": safe_limit}
+            else:
+                stmt = sql_text(
+                    f"{base_sql} ORDER BY i.started_at DESC LIMIT :limit"
+                )
+                params = {"limit": safe_limit}
+            rows = conn.execute(stmt, params).fetchall()
+            result = [tuple(r) for r in rows]
         return f"Incidents (severity, started_at, ended_at, service, summary, postmortem_id): {result}"
     except Exception as e:
         return f"Error querying incidents: {str(e)}"
@@ -268,8 +343,14 @@ TRIAGE_SYSTEM_PROMPT = SystemMessage(
 
 - mode=incident: production or staging issues, outages, HTTP errors (4xx/5xx), timeouts, latency, "who owns this endpoint", paging/on-call during an active problem, or runbook/mitigation for a failing path.
 - mode=general: architecture rationale (ADRs), "why did we choose X", design history, or simple catalog lookups (version, owner) with no incident context.
+- mode=out_of_scope: anything unrelated to PayLane's services, infrastructure, ADRs, runbooks, postmortems, or incidents — e.g. weather, jokes, recipes, world knowledge, generic programming help, personal advice.
 
-When uncertain, prefer general for purely conceptual questions and incident when symptoms or error codes are present."""
+When uncertain between incident and general, prefer general for purely conceptual questions and incident when symptoms or error codes are present. Only use out_of_scope when the question clearly has no PayLane engineering angle."""
+)
+
+DECLINE_MESSAGE = (
+    "I can only help with PayLane's services, runbooks, ADRs, postmortems, and incidents. "
+    "Try asking about a service owner, an incident, a design decision, or a runbook."
 )
 
 
@@ -285,6 +366,21 @@ def _route_after_triage(state: AgentState) -> str:
     return route_target_for_mode(state.get("mode"))
 
 
+def _route_after_validate(state: AgentState) -> str:
+    return "decline_node" if state.get("mode") == "rejected" else "prompt_injection_check"
+
+
+def _route_after_injection_check(state: AgentState) -> str:
+    return "decline_node" if state.get("mode") == "rejected" else "triage"
+
+
+EMPTY_INPUT_MESSAGE = "I didn't catch a question — could you rephrase?"
+PROMPT_INJECTION_MESSAGE = (
+    "Your message was flagged as a possible prompt-injection attempt and was blocked. "
+    "Please rephrase your question in plain language."
+)
+
+
 def create_enterprise_copilot():
     """Supervisor graph: triage -> incident chain (SQL -> docs -> synthesize) or general ReAct agent."""
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
@@ -297,6 +393,46 @@ def create_enterprise_copilot():
     general_agent = create_agent(llm, tools=all_tools, system_prompt=GENERAL_SYSTEM_PROMPT)
     structured_agent = create_agent(llm, tools=sql_tools, system_prompt=STRUCTURED_SYSTEM_PROMPT)
     runbook_agent = create_agent(llm, tools=doc_tools, system_prompt=RUNBOOK_SYSTEM_PROMPT)
+
+    def validate_input_node(state: AgentState):
+        text = latest_user_text(state["messages"])
+        stripped = text.strip()
+        cap = config.max_input_chars()
+        if not stripped:
+            return {
+                "mode": "rejected",
+                "messages": [AIMessage(content=EMPTY_INPUT_MESSAGE)],
+            }
+        if len(text) > cap:
+            return {
+                "mode": "rejected",
+                "messages": [
+                    AIMessage(
+                        content=(
+                            f"Your message is {len(text)} chars; the limit is {cap}. "
+                            "Please shorten it."
+                        )
+                    )
+                ],
+            }
+        return {}
+
+    def prompt_injection_check_node(state: AgentState):
+        text = latest_user_text(state["messages"])
+        is_injection, score = detect_prompt_injection(text)
+        if is_injection:
+            logger.warning("Blocked likely prompt injection (score=%.3f)", score)
+            return {
+                "mode": "rejected",
+                "messages": [AIMessage(content=PROMPT_INJECTION_MESSAGE)],
+            }
+        return {}
+
+    def decline_node(state: AgentState):
+        # No LLM, no tools — deterministic short-circuit for rejected or out-of-scope inputs.
+        if state.get("mode") == "rejected":
+            return {}
+        return {"messages": [AIMessage(content=DECLINE_MESSAGE)]}
 
     def triage_node(state: AgentState):
         try:
@@ -349,21 +485,42 @@ def create_enterprise_copilot():
         return general_agent.invoke(state)
 
     builder = StateGraph(AgentState)
+    builder.add_node("validate_input", validate_input_node)
+    builder.add_node("prompt_injection_check", prompt_injection_check_node)
+    builder.add_node("decline_node", decline_node)
     builder.add_node("triage", triage_node)
     builder.add_node("structured_agent", structured_agent_node)
     builder.add_node("runbook_agent", runbook_agent_node)
     builder.add_node("synthesize", synthesize_node)
     builder.add_node("general_agent", general_agent_node)
 
-    builder.add_edge(START, "triage")
+    builder.add_edge(START, "validate_input")
+    builder.add_conditional_edges(
+        "validate_input",
+        _route_after_validate,
+        {
+            "prompt_injection_check": "prompt_injection_check",
+            "decline_node": "decline_node",
+        },
+    )
+    builder.add_conditional_edges(
+        "prompt_injection_check",
+        _route_after_injection_check,
+        {
+            "triage": "triage",
+            "decline_node": "decline_node",
+        },
+    )
     builder.add_conditional_edges(
         "triage",
         _route_after_triage,
         {
             "structured_agent": "structured_agent",
             "general_agent": "general_agent",
+            "decline_node": "decline_node",
         },
     )
+    builder.add_edge("decline_node", END)
     builder.add_edge("structured_agent", "runbook_agent")
     builder.add_edge("runbook_agent", "synthesize")
     builder.add_edge("synthesize", END)

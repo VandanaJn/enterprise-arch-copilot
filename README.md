@@ -25,6 +25,7 @@ The fictional company **PayLane** (a payments-processing SaaS) is the data domai
 - **Multi-agent orchestration with LangGraph.** A triage step routes incident-flavored questions through a structured-data agent → docs agent → synthesis chain; non-incident questions fall through to a single ReAct agent with all tools.
 - **Retrieval-Augmented Generation done with care.** Semantic chunking via `SemanticChunker`, MD5 hash-based incremental upserts (no duplicate embeddings on rerun), and explicit `document_type` metadata for hybrid filtering.
 - **Hybrid retrieval.** A single user query can cross both a SQLite service catalog and a Chroma vector store, with the agent deciding when each is needed.
+- **Agent guardrails.** A layered defence-in-depth stack applied before any LLM call: input length + empty-message validation → ML-based prompt-injection detection (ProtectAI `deberta-v3-base-prompt-injection-v2`) → LLM triage with `out_of_scope` routing → tool-level SQL read-only enforcement and injection-safe parametrised queries.
 - **Observability.** Optional LangSmith tracing — every node, tool call, and token cost is captured.
 - **Evaluation.** Golden-set evals in `tests/eval/` use `langsmith.evaluate()`.
 - **Resilience.** Tenacity-backed retry on LLM calls, narrowed exception handling, thread-safe lazy singletons for DB connections, and Windows-aware connection cleanup.
@@ -35,32 +36,60 @@ The fictional company **PayLane** (a payments-processing SaaS) is the data domai
 ## Architecture
 
 ```
-                ┌─────────┐
-   user msg ──▶ │ triage  │  (LLM with structured output: {mode, hints})
-                └────┬────┘
-        incident? ──┴── general?
-             │              │
-             ▼              ▼
-   ┌───────────────────┐  ┌──────────────────┐
-   │ structured_agent  │  │  general_agent   │
-   │  (SQL tools only) │  │ (all 3 tools,    │
-   └────────┬──────────┘  │  ReAct loop)     │
-            ▼             └────────┬─────────┘
-   ┌───────────────────┐           │
-   │  runbook_agent    │           │
-   │ (vector search)   │           │
-   └────────┬──────────┘           │
-            ▼                      │
-   ┌───────────────────┐           │
-   │   synthesize      │           │
-   │  (incident brief) │           │
-   └────────┬──────────┘           │
-            └────────┬─────────────┘
-                     ▼
-                  response
+                    ┌──────────────────┐
+   user msg ──────▶ │  validate_input  │  length cap · empty check
+                    └────────┬─────────┘
+              (rejected)─────┤
+                             │ (ok)
+                    ┌────────▼──────────────┐
+                    │ prompt_injection_check │  ProtectAI DeBERTa v3
+                    └────────┬──────────────┘
+              (flagged) ─────┤
+                             │ (clean)          ┌──────────────────┐
+                    ┌────────▼─────────┐        │   decline_node   │
+                    │      triage      │──────▶ │  (fixed message, │
+                    └────────┬─────────┘        │   no LLM/tools)  │
+      LLM structured output  │                  └──────────────────┘
+      mode: incident | general | out_of_scope ──────────▲
+                             │
+           incident?─────────┴──────general?
+               │                        │
+               ▼                        ▼
+   ┌───────────────────┐    ┌───────────────────────┐
+   │  structured_agent │    │    general_agent       │
+   │  (SQL tools only) │    │  (all 4 tools,         │
+   └────────┬──────────┘    │   ReAct loop)          │
+            ▼               └────────────┬───────────┘
+   ┌───────────────────┐                 │
+   │   runbook_agent   │                 │
+   │  (vector search)  │                 │
+   └────────┬──────────┘                 │
+            ▼                            │
+   ┌───────────────────┐                 │
+   │    synthesize     │                 │
+   │  (incident brief) │                 │
+   └────────┬──────────┘                 │
+            └───────────────┬────────────┘
+                            ▼
+                         response
 ```
 
 Source: [src/agent.py](src/agent.py), helpers in [src/incident_workflow.py](src/incident_workflow.py).
+
+---
+
+## Guardrails
+
+The agent applies four defence layers before any expensive LLM or tool call fires:
+
+| Layer | Where | What it blocks |
+|---|---|---|
+| **Input validation** | `validate_input` node | Empty / whitespace-only messages; inputs exceeding `EAC_MAX_INPUT_CHARS` (default 4 000) |
+| **Prompt-injection detection** | `prompt_injection_check` node | Injection attempts classified by [ProtectAI `deberta-v3-base-prompt-injection-v2`](https://huggingface.co/protectai/deberta-v3-base-prompt-injection-v2) — blocks when `label=INJECTION` and `score ≥ EAC_PROMPT_INJECTION_THRESHOLD` (default 0.85) |
+| **Out-of-scope routing** | `triage` (LLM) + `decline_node` | Off-topic questions (weather, recipes, generic help) classified as `out_of_scope` by triage LLM → routed to a fixed-message decline node with no further tool or synthesis calls |
+| **SQL safety** | `query_sql_database` / `query_incidents` tools + `get_sql_db()` connection | Two layers. **Tool boundary:** `query_sql_database` rejects non-SELECT/WITH statements, stacked queries, and comment-disguised writes; `query_incidents` uses parametrised SQLAlchemy `text()` queries with LIKE wildcard escaping. **Connection layer (defense in depth):** the agent's SQLite engine is opened in URI read-only mode (`file:{path}?mode=ro` via `sqlite3.connect(uri=True)`), so writes fail at the OS layer with `attempt to write a readonly database` even if a future tool forgets the regex check. |
+
+All rejection paths converge on `decline_node`, which emits a deterministic message without touching any LLM or database. The injection detector fails open — a model-load error is logged and the request passes through rather than taking down the agent.
 
 ---
 
@@ -108,9 +137,9 @@ The 50-example golden set in [tests/eval/golden_set.json](tests/eval/golden_set.
 
 ```
 src/
-  config.py              # single source of truth for paths (env-overridable)
-  agent.py               # LangGraph supervisor + tools + prompts
-  incident_workflow.py   # triage schema, pure helpers
+  config.py              # single source of truth for paths + guardrail config (env-overridable)
+  agent.py               # LangGraph supervisor + tools + prompts + guardrail nodes
+  incident_workflow.py   # triage schema (TriageResult), routing helpers
   generate_mock_data.py  # templates -> docs/, plus engineering_data.db (services + endpoints + incidents)
   build_vector_db.py     # docs/ -> chroma_db/, with MD5 upsert
 templates/
@@ -124,6 +153,8 @@ scripts/
   setup.py               # one-command bootstrap
   generate_corpus.py     # LLM-driven doc generator
 tests/
+  test_guardrails.py     # unit tests for all guardrail layers (no LLM/network required)
+  test_incident_workflow.py  # pure routing + message-helper tests
   eval/golden_set.json   # 50-example golden eval set
   eval/evaluators.py     # keyword + LLM-as-judge evaluators
 main.py                  # interactive CLI
@@ -155,6 +186,15 @@ Optional path overrides (rarely needed; tests use these):
 | `EAC_GENERATION_MODEL` | `gpt-4o` (used by `scripts/generate_corpus.py`) |
 | `EAC_EVAL_QUICK` | unset (set to `1` for CI-friendly subset eval) |
 | `EAC_EVAL_MIN_SCORE` | `0.5` (per-evaluator floor for eval acceptance) |
+
+Guardrail tuning:
+
+| Var | Default | Purpose |
+|---|---|---|
+| `EAC_MAX_INPUT_CHARS` | `4000` | Maximum user message length before rejection |
+| `EAC_RECURSION_LIMIT` | `20` | LangGraph max node visits per run (fail-fast on runaway loops) |
+| `EAC_PROMPT_INJECTION_THRESHOLD` | `0.85` | Minimum confidence score to block as injection |
+| `EAC_PROMPT_INJECTION_MODEL` | `protectai/deberta-v3-base-prompt-injection-v2` | HuggingFace model ID for the injection classifier |
 
 ---
 

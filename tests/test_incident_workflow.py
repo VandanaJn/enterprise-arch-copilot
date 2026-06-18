@@ -20,6 +20,10 @@ def test_route_target_for_mode_default_none():
     assert route_target_for_mode(None) == "general_agent"
 
 
+def test_route_target_for_mode_out_of_scope():
+    assert route_target_for_mode("out_of_scope") == "decline_node"
+
+
 def test_latest_user_text_finds_last_human():
     msgs = [
         HumanMessage(content="first"),

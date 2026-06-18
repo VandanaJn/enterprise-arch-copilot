@@ -3,6 +3,7 @@ import logging
 import uuid
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
+from src import config
 from src.agent import create_enterprise_copilot, close_connections
 
 # Load environment variables (OPENAI_API_KEY)
@@ -29,14 +30,17 @@ async def chat_loop():
             # Initial state for the graph
             inputs = {"messages": [HumanMessage(content=user_input)]}
 
-            config = {"configurable": {"thread_id": thread_id}}
+            run_config = {
+                "configurable": {"thread_id": thread_id},
+                "recursion_limit": config.recursion_limit(),
+            }
             
             print("\nCopilot: ", end="", flush=True)
             
             # Single run: stream to show tool calls, then use last state for final answer (one LangSmith trace per query)
             printed_msgs = set()
             last_messages = []
-            async for chunk in agent.astream(inputs, config, stream_mode="values"):
+            async for chunk in agent.astream(inputs, run_config, stream_mode="values"):
                 if "messages" in chunk:
                     last_messages = chunk["messages"]
                     for msg in chunk["messages"]:

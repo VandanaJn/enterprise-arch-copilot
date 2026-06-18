@@ -46,3 +46,21 @@ def db_file() -> str:
 
 def chroma_dir() -> str:
     return os.environ.get("EAC_CHROMA_DIR", os.path.join(ROOT_DIR, "chroma_db"))
+
+
+def max_input_chars() -> int:
+    return int(os.environ.get("EAC_MAX_INPUT_CHARS", "4000"))
+
+
+def recursion_limit() -> int:
+    return int(os.environ.get("EAC_RECURSION_LIMIT", "20"))
+
+
+def prompt_injection_threshold() -> float:
+    return float(os.environ.get("EAC_PROMPT_INJECTION_THRESHOLD", "0.85"))
+
+
+def prompt_injection_model() -> str:
+    return os.environ.get(
+        "EAC_PROMPT_INJECTION_MODEL", "protectai/deberta-v3-base-prompt-injection-v2"
+    )

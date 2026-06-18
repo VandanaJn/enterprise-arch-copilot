@@ -216,5 +216,8 @@ chroma_db/
 _debug_agent.py
 /pytest_output.txt
 
+# Personal notes (not project documentation)
+interview_prep.md
+
 # Test sandbox (created/torn down by tests/conftest.py)
 tests/test_data/
