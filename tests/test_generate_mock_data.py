@@ -1,62 +1,85 @@
+"""Unit tests for src.generate_mock_data.
+
+All paths point under tests/test_data/ thanks to env vars set in conftest.py.
+We still wipe the docs+db between tests so each starts from a clean slate.
+"""
+
 import os
-import sqlite3
-import pytest
-from src.generate_mock_data import generate_unstructured_data, generate_structured_data, create_directories, DOCS_DIR, ADR_DIR, RUNBOOK_DIR, DB_FILE
-from src.agent import close_connections
 import shutil
+import sqlite3
+
+import pytest
+
+from src.agent import close_connections
+from src import config
+from src.config import DOC_SUBDIRS
+from src.generate_mock_data import (
+    create_directories,
+    generate_structured_data,
+    generate_unstructured_data,
+)
+
 
 @pytest.fixture(autouse=True)
-def cleanup():
-    """Cleanup before and after each test."""
+def _clean_between_tests():
+    """Reset isolated test_data corpus before/after each test."""
     close_connections()
-    if os.path.exists(DOCS_DIR):
-        shutil.rmtree(DOCS_DIR)
-    if os.path.exists(DB_FILE):
-        os.remove(DB_FILE)
+    if os.path.exists(config.docs_dir()):
+        shutil.rmtree(config.docs_dir(), ignore_errors=True)
+    if os.path.exists(config.db_file()):
+        os.remove(config.db_file())
     yield
-    # Teardown
     close_connections()
-    if os.path.exists(DOCS_DIR):
-        shutil.rmtree(DOCS_DIR)
-    if os.path.exists(DB_FILE):
-        os.remove(DB_FILE)
+    if os.path.exists(config.docs_dir()):
+        shutil.rmtree(config.docs_dir(), ignore_errors=True)
+    if os.path.exists(config.db_file()):
+        os.remove(config.db_file())
+
 
 def test_create_directories():
-    """Test that the required directories are created successfully."""
     create_directories()
-    assert os.path.exists(ADR_DIR)
-    assert os.path.exists(RUNBOOK_DIR)
+    for sub in DOC_SUBDIRS:
+        assert os.path.exists(os.path.join(config.docs_dir(), sub)), f"missing subdir: {sub}"
 
-def test_generate_unstructured_data():
-    """Test that mock markdown files are generated correctly."""
+
+def test_generate_unstructured_data_copies_all_subdirs():
     create_directories()
     generate_unstructured_data()
-    
-    # Check if ADRs were created
-    assert os.path.exists(os.path.join(ADR_DIR, "001-use-kafka-for-events.md"))
-    assert os.path.exists(os.path.join(ADR_DIR, "002-migrate-checkout-to-aws.md"))
-    
-    # Check if runbooks were created
-    assert os.path.exists(os.path.join(RUNBOOK_DIR, "checkout-service-504-mitigation.md"))
-    assert os.path.exists(os.path.join(RUNBOOK_DIR, "user-profile-db-failover.md"))
+    # Each subdirectory should contain at least one .md file copied from templates/.
+    for sub in DOC_SUBDIRS:
+        files = [f for f in os.listdir(os.path.join(config.docs_dir(), sub)) if f.endswith(".md")]
+        assert files, f"no markdown copied into {sub}"
 
-def test_generate_structured_data():
-    """Test that the SQLite database is created and populated."""
+
+def test_generate_structured_data_seeds_all_tables():
     generate_structured_data()
-    assert os.path.exists(DB_FILE)
-    
-    # Connect and verify data
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    
-    # Check service_catalog table
-    cursor.execute("SELECT count(*) FROM service_catalog")
-    service_count = cursor.fetchone()[0]
-    assert service_count == 3
-    
-    # Check api_endpoints table
-    cursor.execute("SELECT count(*) FROM api_endpoints")
-    endpoint_count = cursor.fetchone()[0]
-    assert endpoint_count == 4
-    
-    conn.close()
+    assert os.path.exists(config.db_file())
+
+    conn = sqlite3.connect(config.db_file())
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT count(*) FROM service_catalog")
+        services = cursor.fetchone()[0]
+        assert services >= 8, f"expected >=8 services, got {services}"
+
+        cursor.execute("SELECT count(*) FROM api_endpoints")
+        endpoints = cursor.fetchone()[0]
+        assert endpoints >= 20, f"expected >=20 endpoints, got {endpoints}"
+
+        cursor.execute("SELECT count(*) FROM incidents")
+        incidents = cursor.fetchone()[0]
+        assert incidents >= 10, f"expected >=10 incidents, got {incidents}"
+
+        # Spot-check a known service from the spec
+        cursor.execute("SELECT owner_team, criticality_tier FROM service_catalog WHERE name = 'checkout-service'")
+        row = cursor.fetchone()
+        assert row is not None
+        assert row[1] == "tier-0"
+
+        # Spot-check that at least one incident links to a postmortem
+        cursor.execute("SELECT count(*) FROM incidents WHERE postmortem_id IS NOT NULL")
+        with_pm = cursor.fetchone()[0]
+        assert with_pm >= 5
+    finally:
+        conn.close()

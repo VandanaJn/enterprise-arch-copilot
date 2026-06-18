@@ -1,0 +1,407 @@
+[
+  {
+    "id": "fact-01",
+    "category": "factual",
+    "question": "What version is checkout-service currently on?",
+    "expected_keywords": ["v3.2.0", "checkout-service"],
+    "reference_facts": "checkout-service is on v3.2.0, owned by Team Alpha, written in Go.",
+    "expected_decline": false
+  },
+  {
+    "id": "fact-02",
+    "category": "factual",
+    "question": "Who owns the ledger-service?",
+    "expected_keywords": ["Sigma", "ledger-service"],
+    "reference_facts": "ledger-service is owned by Team Sigma.",
+    "expected_decline": false
+  },
+  {
+    "id": "fact-03",
+    "category": "factual",
+    "question": "What language is ledger-service written in?",
+    "expected_keywords": ["Kotlin"],
+    "reference_facts": "ledger-service is written in Kotlin.",
+    "expected_decline": false
+  },
+  {
+    "id": "fact-04",
+    "category": "factual",
+    "question": "Which services are tier-0 critical?",
+    "expected_keywords": ["checkout-service", "payment-gateway-service", "fraud-detection-service", "ledger-service"],
+    "reference_facts": "Four services are tier-0: checkout-service, payment-gateway-service, fraud-detection-service, and ledger-service.",
+    "expected_decline": false
+  },
+  {
+    "id": "fact-05",
+    "category": "factual",
+    "question": "Are any services deprecated?",
+    "expected_keywords": ["legacy-inventory-service", "deprecated"],
+    "reference_facts": "Yes — legacy-inventory-service is marked deprecated and scheduled for sunset 2025-Q3, owned by Team Gamma.",
+    "expected_decline": false
+  },
+  {
+    "id": "fact-06",
+    "category": "factual",
+    "question": "What's the on-call rotation for Team Beta?",
+    "expected_keywords": ["pagerduty-beta"],
+    "reference_facts": "Team Beta's on-call rotation is pagerduty-beta.",
+    "expected_decline": false
+  },
+  {
+    "id": "fact-07",
+    "category": "factual",
+    "question": "What endpoints does payment-gateway-service expose?",
+    "expected_keywords": ["authorize", "capture", "refund"],
+    "reference_facts": "payment-gateway-service exposes /api/v1/payments/authorize, /api/v1/payments/capture, /api/v1/payments/refund, and /api/v1/payments/{id}.",
+    "expected_decline": false
+  },
+  {
+    "id": "fact-08",
+    "category": "factual",
+    "question": "Which team owns user-profile-service?",
+    "expected_keywords": ["Beta", "user-profile-service"],
+    "reference_facts": "user-profile-service is owned by Team Beta.",
+    "expected_decline": false
+  },
+  {
+    "id": "fact-09",
+    "category": "factual",
+    "question": "What language is fraud-detection-service written in?",
+    "expected_keywords": ["Python"],
+    "reference_facts": "fraud-detection-service is written in Python.",
+    "expected_decline": false
+  },
+  {
+    "id": "fact-10",
+    "category": "factual",
+    "question": "What's the criticality tier of reporting-service?",
+    "expected_keywords": ["tier-2"],
+    "reference_facts": "reporting-service is tier-2.",
+    "expected_decline": false
+  },
+  {
+    "id": "fact-11",
+    "category": "factual",
+    "question": "Which services are owned by Team Sigma?",
+    "expected_keywords": ["fraud-detection-service", "ledger-service"],
+    "reference_facts": "Team Sigma owns fraud-detection-service and ledger-service.",
+    "expected_decline": false
+  },
+  {
+    "id": "fact-12",
+    "category": "factual",
+    "question": "What's the repository URL for checkout-service?",
+    "expected_keywords": ["github.com", "checkout-service"],
+    "reference_facts": "checkout-service repository is github.com/paylane/checkout-service.",
+    "expected_decline": false
+  },
+
+  {
+    "id": "doc-01",
+    "category": "single-hop-doc",
+    "question": "What ADR covers our Kafka adoption decision?",
+    "expected_keywords": ["ADR-002", "Kafka"],
+    "reference_facts": "ADR-002 covers the adoption of Apache Kafka for event streaming, accepted in 2022-Q3.",
+    "expected_decline": false
+  },
+  {
+    "id": "doc-02",
+    "category": "single-hop-doc",
+    "question": "Why did we choose Kafka over RabbitMQ?",
+    "expected_keywords": ["throughput", "Kafka"],
+    "reference_facts": "Kafka was chosen over RabbitMQ for higher throughput, distributed log persistence, and better support for the growing transaction volume.",
+    "expected_decline": false
+  },
+  {
+    "id": "doc-03",
+    "category": "single-hop-doc",
+    "question": "What ADR covers the AWS EKS migration of checkout-service?",
+    "expected_keywords": ["ADR-004", "EKS", "checkout-service"],
+    "reference_facts": "ADR-004 covers migrating checkout-service to AWS EKS for auto-scaling and self-healing.",
+    "expected_decline": false
+  },
+  {
+    "id": "doc-04",
+    "category": "single-hop-doc",
+    "question": "Is there a runbook for checkout-service 504 errors?",
+    "expected_keywords": ["RB-001", "504", "checkout-service"],
+    "reference_facts": "RB-001 is the runbook for checkout-service 504 gateway timeout mitigation, owned by Team Alpha.",
+    "expected_decline": false
+  },
+  {
+    "id": "doc-05",
+    "category": "single-hop-doc",
+    "question": "What's the plan for sunsetting legacy-inventory-service?",
+    "expected_keywords": ["2025-Q3", "Gamma", "legacy-inventory-service"],
+    "reference_facts": "ADR-012 plans to sunset legacy-inventory-service by 2025-Q3 with no new features, minimal support, and decommissioning.",
+    "expected_decline": false
+  },
+  {
+    "id": "doc-06",
+    "category": "single-hop-doc",
+    "question": "Why did we adopt Datadog?",
+    "expected_keywords": ["Datadog", "metrics"],
+    "reference_facts": "ADR-006 covers Datadog adoption as primary metrics and APM platform.",
+    "expected_decline": false
+  },
+  {
+    "id": "doc-07",
+    "category": "single-hop-doc",
+    "question": "How do we handle Kafka consumer lag spikes?",
+    "expected_keywords": ["lag", "Kafka", "consumer"],
+    "reference_facts": "The runbook RB-004 covers Kafka consumer lag on checkout.events including diagnostic and mitigation steps.",
+    "expected_decline": false
+  },
+  {
+    "id": "doc-08",
+    "category": "single-hop-doc",
+    "question": "What's our policy on idempotency keys for payment endpoints?",
+    "expected_keywords": ["idempotency", "payment"],
+    "reference_facts": "ADR-013 covers idempotency keys for payment-gateway endpoints.",
+    "expected_decline": false
+  },
+  {
+    "id": "doc-09",
+    "category": "single-hop-doc",
+    "question": "What's our blue/green deployment policy?",
+    "expected_keywords": ["blue/green", "tier-0"],
+    "reference_facts": "ADR-018 covers blue/green deployments for tier-0 services.",
+    "expected_decline": false
+  },
+  {
+    "id": "doc-10",
+    "category": "single-hop-doc",
+    "question": "How do we approach PCI-DSS network segmentation?",
+    "expected_keywords": ["PCI-DSS", "segmentation"],
+    "reference_facts": "ADR-017 covers the PCI-DSS network segmentation strategy.",
+    "expected_decline": false
+  },
+  {
+    "id": "doc-11",
+    "category": "single-hop-doc",
+    "question": "Is there a design doc for multi-region active-active?",
+    "expected_keywords": ["DD-004", "multi-region"],
+    "reference_facts": "DD-004 is the design doc for multi-region active-active for checkout-service.",
+    "expected_decline": false
+  },
+  {
+    "id": "doc-12",
+    "category": "single-hop-doc",
+    "question": "What's the design doc for adopting OpenTelemetry?",
+    "expected_keywords": ["DD-002", "OpenTelemetry"],
+    "reference_facts": "DD-002 is the Observability v2 design doc proposing OpenTelemetry adoption across all services.",
+    "expected_decline": false
+  },
+
+  {
+    "id": "incident-01",
+    "category": "multi-hop-incident",
+    "question": "The /api/v1/checkout endpoint is failing with a 504. Who owns it and is there a runbook?",
+    "expected_keywords": ["Alpha", "checkout-service", "504"],
+    "reference_facts": "/api/v1/checkout belongs to checkout-service (owned by Team Alpha, on-call pagerduty-alpha). RB-001 covers 504 mitigation.",
+    "expected_decline": false
+  },
+  {
+    "id": "incident-02",
+    "category": "multi-hop-incident",
+    "question": "/api/v1/payments/authorize is timing out — who's on call and what should I do?",
+    "expected_keywords": ["Alpha", "payment-gateway-service", "pagerduty-alpha"],
+    "reference_facts": "/api/v1/payments/authorize belongs to payment-gateway-service (Team Alpha, pagerduty-alpha). RB-002 covers payment-gateway authorization timeouts.",
+    "expected_decline": false
+  },
+  {
+    "id": "incident-03",
+    "category": "multi-hop-incident",
+    "question": "There's Kafka consumer lag on checkout.events — who do I page and what's the mitigation?",
+    "expected_keywords": ["Alpha", "Kafka", "lag"],
+    "reference_facts": "checkout-service is owned by Team Alpha (pagerduty-alpha). RB-004 covers Kafka consumer lag mitigation steps.",
+    "expected_decline": false
+  },
+  {
+    "id": "incident-04",
+    "category": "multi-hop-incident",
+    "question": "user-profile-service is throwing RDS connection errors — which team and what runbook?",
+    "expected_keywords": ["Beta", "user-profile-service", "RDS"],
+    "reference_facts": "user-profile-service is owned by Team Beta (pagerduty-beta). RB-014 covers RDS connection pool exhaustion.",
+    "expected_decline": false
+  },
+  {
+    "id": "incident-05",
+    "category": "multi-hop-incident",
+    "question": "webhook-dispatcher is backing up — who do I page and what's the fix?",
+    "expected_keywords": ["Beta", "webhook-dispatcher", "backlog"],
+    "reference_facts": "webhook-dispatcher is owned by Team Beta (pagerduty-beta). RB-007 covers webhook dispatcher backlog overflowing Redis.",
+    "expected_decline": false
+  },
+  {
+    "id": "incident-06",
+    "category": "multi-hop-incident",
+    "question": "fraud-detection-service ML cluster is down — what's the fallback procedure?",
+    "expected_keywords": ["fraud-detection-service", "fallback"],
+    "reference_facts": "RB-003 covers fraud-detection-service model fallback when the ML cluster is down. Owned by Team Sigma.",
+    "expected_decline": false
+  },
+  {
+    "id": "incident-07",
+    "category": "multi-hop-incident",
+    "question": "notification-service is OOM — what runbook applies and who owns it?",
+    "expected_keywords": ["Beta", "notification-service", "Redis"],
+    "reference_facts": "notification-service is owned by Team Beta. RB-009 covers Redis memory pressure on notification-service.",
+    "expected_decline": false
+  },
+  {
+    "id": "incident-08",
+    "category": "multi-hop-incident",
+    "question": "ClickHouse queries on the reporting service are slow — runbook?",
+    "expected_keywords": ["RB-017", "ClickHouse", "reporting-service"],
+    "reference_facts": "RB-017 covers reporting-service ClickHouse slow queries. Owned by Team Delta.",
+    "expected_decline": false
+  },
+  {
+    "id": "incident-09",
+    "category": "multi-hop-incident",
+    "question": "Was there a recent incident on checkout-service?",
+    "expected_keywords": ["PM-2024-001", "checkout-service", "Black Friday"],
+    "reference_facts": "Yes — multiple incidents including PM-2024-001 (Black Friday outage), PM-2024-004 (Kafka rebalance storm), PM-2024-007 (EKS deploy wedge).",
+    "expected_decline": false
+  },
+  {
+    "id": "incident-10",
+    "category": "multi-hop-incident",
+    "question": "Show me recent incidents for payment-gateway-service.",
+    "expected_keywords": ["payment-gateway-service", "Stripe"],
+    "reference_facts": "Recent incidents include PM-2024-002 (Stripe credential rotation incident) and a TLS near-expiry alert.",
+    "expected_decline": false
+  },
+  {
+    "id": "incident-11",
+    "category": "multi-hop-incident",
+    "question": "What was the impact of the Black Friday 2024 checkout outage?",
+    "expected_keywords": ["Black Friday", "checkout", "revenue"],
+    "reference_facts": "PM-2024-001 reports ~30 min outage, ~15% transactions affected, ~$500K in lost revenue at peak hour on 2024-11-29.",
+    "expected_decline": false
+  },
+  {
+    "id": "incident-12",
+    "category": "multi-hop-incident",
+    "question": "Did ledger-service have any SEV-1 incidents recently?",
+    "expected_keywords": ["ledger-service", "SEV-1"],
+    "reference_facts": "Yes — PM-2024-006 (currency rounding bug) and PM-2024-008 (double-entry bug causing settlement drift) on ledger-service.",
+    "expected_decline": false
+  },
+
+  {
+    "id": "ambig-01",
+    "category": "ambiguous",
+    "question": "What does the checkout team work on?",
+    "expected_keywords": ["Alpha", "checkout-service", "payment"],
+    "reference_facts": "Team Alpha owns checkout-service and payment-gateway-service — the critical path from card swipe to authorization.",
+    "expected_decline": false
+  },
+  {
+    "id": "ambig-02",
+    "category": "ambiguous",
+    "question": "Tell me about fraud at PayLane.",
+    "expected_keywords": ["fraud-detection-service", "Sigma"],
+    "reference_facts": "fraud-detection-service is owned by Team Sigma, written in Python, handles transaction risk scoring.",
+    "expected_decline": false
+  },
+  {
+    "id": "ambig-03",
+    "category": "ambiguous",
+    "question": "Who handles the ledger?",
+    "expected_keywords": ["Sigma", "ledger-service"],
+    "reference_facts": "Team Sigma owns ledger-service (Kotlin + TimescaleDB).",
+    "expected_decline": false
+  },
+  {
+    "id": "ambig-04",
+    "category": "ambiguous",
+    "question": "Is there a service called 'users'?",
+    "expected_keywords": ["user-profile-service"],
+    "reference_facts": "There's no service literally named 'users' — closest match is user-profile-service.",
+    "expected_decline": false
+  },
+  {
+    "id": "ambig-05",
+    "category": "ambiguous",
+    "question": "Anything about webhook problems?",
+    "expected_keywords": ["webhook-dispatcher", "RB-007"],
+    "reference_facts": "RB-007 covers webhook-dispatcher backlog overflowing Redis. PM-2024-005 covers a webhook flood from a single merchant.",
+    "expected_decline": false
+  },
+  {
+    "id": "ambig-06",
+    "category": "ambiguous",
+    "question": "What's our auth API?",
+    "expected_keywords": ["payments/authorize", "payment-gateway-service"],
+    "reference_facts": "Likely refers to /api/v1/payments/authorize in payment-gateway-service (card authorization), or merchant onboarding KYC for merchants.",
+    "expected_decline": false
+  },
+
+  {
+    "id": "super-01",
+    "category": "supersession",
+    "question": "What's our current event-streaming choice?",
+    "expected_keywords": ["Kafka"],
+    "reference_facts": "Kafka. ADR-002 (Kafka adoption) supersedes ADR-001 (RabbitMQ).",
+    "expected_decline": false
+  },
+  {
+    "id": "super-02",
+    "category": "supersession",
+    "question": "Are we still using RabbitMQ?",
+    "expected_keywords": ["No", "Kafka"],
+    "reference_facts": "No — RabbitMQ (ADR-001) was superseded by Kafka (ADR-002) in 2022-Q3.",
+    "expected_decline": false
+  },
+  {
+    "id": "super-03",
+    "category": "supersession",
+    "question": "What did we use for messaging before Kafka?",
+    "expected_keywords": ["RabbitMQ", "ADR-001"],
+    "reference_facts": "RabbitMQ — see ADR-001, which was superseded by ADR-002 (Kafka adoption).",
+    "expected_decline": false
+  },
+  {
+    "id": "super-04",
+    "category": "supersession",
+    "question": "Which ADRs have been superseded?",
+    "expected_keywords": ["ADR-001"],
+    "reference_facts": "ADR-001 (RabbitMQ adoption) was superseded by ADR-002 (Kafka adoption).",
+    "expected_decline": false
+  },
+
+  {
+    "id": "oos-01",
+    "category": "out-of-scope",
+    "question": "What's the weather in San Francisco today?",
+    "expected_keywords": [],
+    "reference_facts": "This is out of scope — the agent should decline politely and remind the user it can only help with PayLane engineering questions.",
+    "expected_decline": true
+  },
+  {
+    "id": "oos-02",
+    "category": "out-of-scope",
+    "question": "Write me a haiku about Mondays.",
+    "expected_keywords": [],
+    "reference_facts": "This is out of scope — the agent should decline politely.",
+    "expected_decline": true
+  },
+  {
+    "id": "oos-03",
+    "category": "out-of-scope",
+    "question": "How do I make pasta carbonara?",
+    "expected_keywords": [],
+    "reference_facts": "This is out of scope — the agent should decline politely.",
+    "expected_decline": true
+  },
+  {
+    "id": "oos-04",
+    "category": "out-of-scope",
+    "question": "What's the best programming language overall?",
+    "expected_keywords": [],
+    "reference_facts": "This is out of scope (general opinion question, not about PayLane). The agent should decline.",
+    "expected_decline": true
+  }
+]

@@ -11,12 +11,7 @@ from src.build_vector_db import (
     get_vector_store
 )
 from src.generate_mock_data import generate_unstructured_data, create_directories
-from langchain_openai import OpenAIEmbeddings
-from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
-from dotenv import load_dotenv
-
-load_dotenv()
 
 @pytest.fixture
 def mock_docs_dir(tmp_path):

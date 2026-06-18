@@ -1,129 +1,272 @@
 # Enterprise Architecture Copilot
 
-This project is an advanced Retrieval-Augmented Generation (RAG) system built with LangChain, LangGraph, and OpenAI embeddings. It simulates an AI engineering assistant capable of querying internal enterprise documentation (ADRs, runbooks) and structured metadata (service catalog, API endpoints) via SQLite and ChromaDB.
+A multi-agent RAG copilot that helps on-call engineers cut through internal docs and metadata during incidents. Built with **LangGraph**, **OpenAI**, **ChromaDB**, and **SQLite** — with a triage-first supervisor topology, hybrid SQL + vector retrieval, MD5-based incremental embeddings, observability via LangSmith, and a 50-example golden eval set with LLM-as-judge graders.
 
-## Project Features
-
-* **Data Generation**: Procedurally creates rich mock Architectural Decision Records (ADRs), runbooks, and a relational service catalog.
-* **Semantic Chunking**: Employs LangChain's `SemanticChunker` to semantically divide raw markdown documentation.
-* **Hybrid Search Ready**: Injects unstructured documents with explicit metadata (e.g. `document_type: adr`) for targeted exact-match filtering alongside semantic similarity.
-* **Idempotent Vector Insertion**: Implements a custom UPSERT strategy utilizing MD5 document hashing to guarantee the vector database is only populated with updated or new chunks, preventing hallucinations caused by duplications on rerun.
-
-## Project Structure
-- `templates/mock_docs/`: **Source** markdown for ADRs and runbooks (edit here). Not ingested directly by the embedder.
-- `src/`: Core Python application logic and agents.
-  - `generate_mock_data.py`: Copies templates into `docs/`, creates `engineering_data.db`.
-  - `build_vector_db.py`: Reads `docs/`, chunks and embeds into `chroma_db/`.
-- `main.py`: Interactive CLI — run after mock data and vector DB are built.
-- `tests/`: Pytest suite (unit + integration).
-  - `tests/eval/`: LangSmith `evaluate()` golden-set tests (`langsmith` is listed in `requirements.txt`).
-- `tests/conftest.py`: Adds the repo root to `sys.path`, loads repo-root `.env`, session teardown for DB connections.
-- `DECISIONS.md`: Architectural decisions log.
-
-*Note: Generated artifacts (`docs/`, `chroma_db/`, `engineering_data.db`) are gitignored—do not treat `docs/` as the canonical copy of markdown; change templates and regenerate.*
-
-### Data pipeline
-
-1. **Templates** (`templates/mock_docs/adrs`, `.../runbooks`) hold the real ADR/runbook text.  
-2. **`generate_mock_data.py`** copies them to **`docs/`** and (re)builds **`engineering_data.db`**.  
-3. **`build_vector_db.py`** reads **`docs/`** and writes **`chroma_db/`** (embeddings).  
-
-After you change any file under `templates/mock_docs/`, run steps 2–3 again so `docs/` and Chroma stay in sync.
-
-**Windows:** If deleting `chroma_db/` or `engineering_data.db` fails (“file in use”), exit any Python session using the app or call `close_connections()` from `src.agent`, then retry.
-
-## Setup Instructions
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/VandanaJn/enterprise-arch-copilot.git
-   cd enterprise-arch-copilot
-   ```
-
-2. **Set up a Python virtual environment:**
-   ```bash
-   python -m venv venv
-   
-   # Windows
-   .\venv\Scripts\activate
-   
-   # macOS/Linux
-   source venv/bin/activate
-   ```
-
-3. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-   This includes `langchain`, `chromadb`, `pytest`, and `langsmith` (for offline evals in `tests/eval/`).
-
-4. **Configure environment:**
-   Copy `.env.example` to `.env` and set your keys:
-   ```bash
-   cp .env.example .env
-   ```
-   Then edit `.env` and set at least:
-   - `OPENAI_API_KEY` — required for the copilot, embeddings, and integration tests.
-   Optional for [LangSmith](https://smith.langchain.com) observability (traces, latency, tool calls):
-   - `LANGSMITH_API_KEY`
-   - `LANGSMITH_TRACING=true`
-   - `LANGSMITH_PROJECT=enterprise-arch-copilot`
-
-## Usage
-
-**Step 1: Generate Mock Data**
-```bash
-python src/generate_mock_data.py
 ```
-This generates a `docs/` folder containing dummy ADRs and Runbooks, and initializes an `engineering_data.db` SQLite database.
-
-**Step 2: Build the Vector Database**
-```bash
-python src/build_vector_db.py
-```
-This script processes the markdown files, calculates their hashes, transforms them recursively into chunks, and stores their embeddings in a local `chroma_db/` directory.
-
-**Step 3: Run the copilot (interactive)**
-```bash
-python main.py
-```
-Type `exit` or `quit` to leave the chat loop.
-
-## Running Tests
-
-**Quick run (no API key or built DB required)** — runs unit tests only (e.g. data generation, chunking, metadata):
-```bash
-pytest tests/ -v -m "not integration and not langsmith_eval"
+You: The /api/v1/checkout endpoint is failing with a 504. Who owns it and is there a runbook?
+Copilot:
+  ## Summary
+  /api/v1/checkout (POST) belongs to checkout-service v3.2.0 — currently on tier-0 SLO.
+  ## Ownership / paging
+  Team Alpha — pagerduty-alpha
+  ## Runbook / mitigation steps
+  Per RB-001: check Datadog response-time spike, scale checkout-service replicas,
+  verify Kafka consumer lag on checkout.events, restart connection pooler if RDS
+  pool is exhausted. Page Team Alpha on-call if not mitigated within 5 minutes.
+  ...
 ```
 
-**Full test suite** — integration tests need `OPENAI_API_KEY` and a built vector DB. One-time setup:
-1. Set `OPENAI_API_KEY` in your `.env` file.
-2. Generate mock data and build the vector DB:
-   ```bash
-   python src/generate_mock_data.py
-   python src/build_vector_db.py
-   ```
-3. Run all tests:
-   ```bash
-   pytest tests/ -v
-   ```
+The fictional company **PayLane** (a payments-processing SaaS) is the data domain — see [templates/company_spec.md](templates/company_spec.md). The corpus (~50 ADRs, runbooks, postmortems, design docs) is **LLM-generated** from that spec.
 
-Integration tests (agent routing, vector search, Chroma connectivity) are marked with `@pytest.mark.integration` and are skipped when the API key is missing or when `chroma_db/` does not exist.
+---
 
-### LangSmith evaluations (offline)
+## What this project demonstrates
 
-Golden-set evaluations use LangSmith’s [`evaluate()`](https://docs.smith.langchain.com/evaluation) API (same pattern as the *Intro to LangSmith* course: target function + row evaluators). They live under `tests/eval/`, are marked `@pytest.mark.langsmith_eval`, and are **skipped** unless `OPENAI_API_KEY`, `LANGSMITH_API_KEY`, `engineering_data.db`, and `chroma_db/` are all present. `tests/conftest.py` loads `.env` from the **repository root** (next to `README.md`) before tests import `src.*`, regardless of pytest’s working directory.
+- **Multi-agent orchestration with LangGraph.** A triage step routes incident-flavored questions through a structured-data agent → docs agent → synthesis chain; non-incident questions fall through to a single ReAct agent with all tools.
+- **Retrieval-Augmented Generation done with care.** Semantic chunking via `SemanticChunker`, MD5 hash-based incremental upserts (no duplicate embeddings on rerun), and explicit `document_type` metadata for hybrid filtering.
+- **Hybrid retrieval.** A single user query can cross both a SQLite service catalog and a Chroma vector store, with the agent deciding when each is needed.
+- **Agent guardrails.** A layered defence-in-depth stack applied before any LLM call: input length + empty-message validation → ML-based prompt-injection detection (ProtectAI `deberta-v3-base-prompt-injection-v2`) → LLM triage with `out_of_scope` routing → tool-level SQL read-only enforcement and injection-safe parametrised queries.
+- **Observability.** Optional LangSmith tracing — every node, tool call, and token cost is captured.
+- **Evaluation.** Golden-set evals in `tests/eval/` use `langsmith.evaluate()`.
+- **Resilience.** Tenacity-backed retry on LLM calls, narrowed exception handling, thread-safe lazy singletons for DB connections, and Windows-aware connection cleanup.
+- **Honest test isolation.** Tests run against `tests/test_data/` — never the developer's real data directory. Running the full suite is non-destructive.
 
-After mock data and the vector DB are built:
+---
 
-```bash
-pytest tests/eval/ -v -m langsmith_eval
+## Architecture
+
+```
+                    ┌──────────────────┐
+   user msg ──────▶ │  validate_input  │  length cap · empty check
+                    └────────┬─────────┘
+              (rejected)─────┤
+                             │ (ok)
+                    ┌────────▼──────────────┐
+                    │ prompt_injection_check │  ProtectAI DeBERTa v3
+                    └────────┬──────────────┘
+              (flagged) ─────┤
+                             │ (clean)          ┌──────────────────┐
+                    ┌────────▼─────────┐        │   decline_node   │
+                    │      triage      │──────▶ │  (fixed message, │
+                    └────────┬─────────┘        │   no LLM/tools)  │
+      LLM structured output  │                  └──────────────────┘
+      mode: incident | general | out_of_scope ──────────▲
+                             │
+           incident?─────────┴──────general?
+               │                        │
+               ▼                        ▼
+   ┌───────────────────┐    ┌───────────────────────┐
+   │  structured_agent │    │    general_agent       │
+   │  (SQL tools only) │    │  (all 4 tools,         │
+   └────────┬──────────┘    │   ReAct loop)          │
+            ▼               └────────────┬───────────┘
+   ┌───────────────────┐                 │
+   │   runbook_agent   │                 │
+   │  (vector search)  │                 │
+   └────────┬──────────┘                 │
+            ▼                            │
+   ┌───────────────────┐                 │
+   │    synthesize     │                 │
+   │  (incident brief) │                 │
+   └────────┬──────────┘                 │
+            └───────────────┬────────────┘
+                            ▼
+                         response
 ```
 
-Optional: `EAC_EVAL_MIN_SCORE` (default `0.5`) sets the minimum acceptable `keyword_coverage` score per example.
+Source: [src/agent.py](src/agent.py), helpers in [src/incident_workflow.py](src/incident_workflow.py).
 
-**CI:** `.github/workflows/ci.yml` runs unit tests on every push/PR, then runs the LangSmith eval job when the workflow has access to secrets (same-repo PRs and pushes). Configure repository secrets `OPENAI_API_KEY` and `LANGSMITH_API_KEY`. If either secret is missing, the eval step exits successfully without running tests (so CI stays green). Eval traces go to the project named by `LANGSMITH_PROJECT` (the workflow sets `enterprise-arch-copilot-eval`).
+---
 
-## Observability (LangSmith)
+## Guardrails
 
-When `LANGSMITH_API_KEY` and `LANGSMITH_TRACING=true` are set in `.env`, LangChain/LangGraph automatically send traces to [LangSmith](https://smith.langchain.com). You can inspect runs, latency, tool calls, and token usage in the project named by `LANGSMITH_PROJECT` (e.g. `enterprise-arch-copilot`). No code changes are required beyond loading `.env`; the framework instruments calls when these variables are present.
+The agent applies four defence layers before any expensive LLM or tool call fires:
+
+| Layer | Where | What it blocks |
+|---|---|---|
+| **Input validation** | `validate_input` node | Empty / whitespace-only messages; inputs exceeding `EAC_MAX_INPUT_CHARS` (default 4 000) |
+| **Prompt-injection detection** | `prompt_injection_check` node | Injection attempts classified by [ProtectAI `deberta-v3-base-prompt-injection-v2`](https://huggingface.co/protectai/deberta-v3-base-prompt-injection-v2) — blocks when `label=INJECTION` and `score ≥ EAC_PROMPT_INJECTION_THRESHOLD` (default 0.85) |
+| **Out-of-scope routing** | `triage` (LLM) + `decline_node` | Off-topic questions (weather, recipes, generic help) classified as `out_of_scope` by triage LLM → routed to a fixed-message decline node with no further tool or synthesis calls |
+| **SQL safety** | `query_sql_database` / `query_incidents` tools + `get_sql_db()` connection | Two layers. **Tool boundary:** `query_sql_database` rejects non-SELECT/WITH statements, stacked queries, and comment-disguised writes; `query_incidents` uses parametrised SQLAlchemy `text()` queries with LIKE wildcard escaping. **Connection layer (defense in depth):** the agent's SQLite engine is opened in URI read-only mode (`file:{path}?mode=ro` via `sqlite3.connect(uri=True)`), so writes fail at the OS layer with `attempt to write a readonly database` even if a future tool forgets the regex check. |
+
+All rejection paths converge on `decline_node`, which emits a deterministic message without touching any LLM or database. The injection detector fails open — a model-load error is logged and the request passes through rather than taking down the agent.
+
+---
+
+## Quickstart
+
+```bash
+git clone https://github.com/VandanaJn/enterprise-arch-copilot.git
+cd enterprise-arch-copilot
+
+python -m venv venv
+# Windows:        .\venv\Scripts\activate
+# macOS / Linux:  source venv/bin/activate
+pip install -r requirements.txt
+
+cp .env.example .env        # then edit and set OPENAI_API_KEY
+make setup                  # validates env, generates mock data, builds vector DB
+make run                    # interactive copilot
+```
+
+Windows users without `make`:
+
+```powershell
+./tasks.ps1 setup
+./tasks.ps1 run
+```
+
+---
+
+## Sample queries
+
+The 50-example golden set in [tests/eval/golden_set.json](tests/eval/golden_set.json) covers six categories. Try one from each:
+
+| Category | Question |
+|---|---|
+| factual | *Which services are tier-0 critical?* |
+| single-hop doc | *What ADR covers our Kafka adoption decision?* |
+| multi-hop incident | *The /api/v1/checkout endpoint is failing with a 504. Who owns it and is there a runbook?* |
+| ambiguous | *Tell me about fraud at PayLane.* |
+| supersession-aware | *What's our current event-streaming choice?* (should answer Kafka, not RabbitMQ) |
+| out-of-scope | *Write me a haiku about Mondays.* (should decline politely) |
+
+---
+
+## Layout
+
+```
+src/
+  config.py              # single source of truth for paths + guardrail config (env-overridable)
+  agent.py               # LangGraph supervisor + tools + prompts + guardrail nodes
+  incident_workflow.py   # triage schema (TriageResult), routing helpers
+  generate_mock_data.py  # templates -> docs/, plus engineering_data.db (services + endpoints + incidents)
+  build_vector_db.py     # docs/ -> chroma_db/, with MD5 upsert
+templates/
+  company_spec.md        # fictional company spec (seeds LLM generation)
+  mock_docs/
+    adrs/                # 25 ADRs (LLM-generated, with supersession chains)
+    runbooks/            # 15 runbooks
+    postmortems/         # 8 postmortems
+    design_docs/         # 5 design docs
+scripts/
+  setup.py               # one-command bootstrap
+  generate_corpus.py     # LLM-driven doc generator
+tests/
+  test_guardrails.py     # unit tests for all guardrail layers (no LLM/network required)
+  test_incident_workflow.py  # pure routing + message-helper tests
+  eval/golden_set.json   # 50-example golden eval set
+  eval/evaluators.py     # keyword + LLM-as-judge evaluators
+main.py                  # interactive CLI
+Makefile  tasks.ps1      # task runners
+```
+
+Generated artifacts (`docs/`, `engineering_data.db`, `chroma_db/`) are gitignored — `templates/` is the canonical source. Re-run `make setup` after editing templates.
+
+---
+
+## Configuration
+
+`.env` (copy from `.env.example`):
+
+| Var | Required | Purpose |
+|---|---|---|
+| `OPENAI_API_KEY` | yes | Chat + embeddings |
+| `LANGSMITH_API_KEY` | optional | Tracing |
+| `LANGSMITH_TRACING` | optional | `true` to enable tracing |
+| `LANGSMITH_PROJECT` | optional | Project name in LangSmith |
+
+Optional path overrides (rarely needed; tests use these):
+
+| Var | Default |
+|---|---|
+| `EAC_DOCS_DIR` | `<repo>/docs` |
+| `EAC_DB_FILE` | `<repo>/engineering_data.db` |
+| `EAC_CHROMA_DIR` | `<repo>/chroma_db` |
+| `EAC_GENERATION_MODEL` | `gpt-4o` (used by `scripts/generate_corpus.py`) |
+| `EAC_EVAL_QUICK` | unset (set to `1` for CI-friendly subset eval) |
+| `EAC_EVAL_MIN_SCORE` | `0.5` (per-evaluator floor for eval acceptance) |
+
+Guardrail tuning:
+
+| Var | Default | Purpose |
+|---|---|---|
+| `EAC_MAX_INPUT_CHARS` | `4000` | Maximum user message length before rejection |
+| `EAC_RECURSION_LIMIT` | `20` | LangGraph max node visits per run (fail-fast on runaway loops) |
+| `EAC_PROMPT_INJECTION_THRESHOLD` | `0.85` | Minimum confidence score to block as injection |
+| `EAC_PROMPT_INJECTION_MODEL` | `protectai/deberta-v3-base-prompt-injection-v2` | HuggingFace model ID for the injection classifier |
+
+---
+
+## How the data was made
+
+The fictional engineering organization (**PayLane**) is described in a single source-of-truth file at [templates/company_spec.md](templates/company_spec.md): 10 services, 5 teams, a tech stack, a 6-year engineering timeline, and cross-reference rules.
+
+The 50+ markdown documents in `templates/mock_docs/` are **LLM-generated from that spec** by [scripts/generate_corpus.py](scripts/generate_corpus.py). The script reads the spec into the system prompt, lists already-generated docs to avoid duplicates, and uses `gpt-4o` with structured output (Pydantic) to produce well-formed YAML frontmatter (`id`, `status`, `date`, `services`, `supersedes`, etc.) plus a markdown body. Generation is idempotent — re-running skips existing IDs unless `--force` is passed.
+
+```bash
+python -m scripts.generate_corpus --type adrs --count 25
+python -m scripts.generate_corpus --type runbooks --count 15
+python -m scripts.generate_corpus --type adrs --id ADR-007 --force --topic "..."  # regenerate one
+```
+
+This approach scales to a portfolio-credible corpus quickly while keeping the entire dataset reproducible from the spec — every reviewer can regenerate it themselves to confirm.
+
+---
+
+## Evaluation
+
+Real RAG systems live or die by their evals. The harness in [tests/eval/](tests/eval/) runs each commit against a 50-example golden set with four evaluators:
+
+| Evaluator | Type | Score | What it measures |
+|---|---|---|---|
+| `keyword_coverage` | deterministic | 0.0–1.0 | Fraction of expected keywords present in the answer |
+| `factuality` | LLM-as-judge (`gpt-4o`) | 0 / 0.5 / 1 | Agreement with `reference_facts` |
+| `groundedness` | LLM-as-judge (`gpt-4o`) | 0 / 0.5 / 1 | Uses concrete PayLane entities (services, ADR IDs) vs. generic content |
+| `appropriate_decline` | LLM-as-judge (`gpt-4o`) | 0 / 1 | For out-of-scope questions, did the agent decline politely? |
+
+Categories in the golden set:
+
+| Category | Examples | Purpose |
+|---|---|---|
+| factual lookups | 12 | SQL retrieval precision (versions, owners, languages, tiers) |
+| single-hop docs | 12 | Vector retrieval accuracy (which ADR covers X?) |
+| multi-hop incident | 12 | Supervisor graph: SQL → docs → synthesis |
+| ambiguous / partial | 6 | Fuzzy matching, partial service names |
+| supersession-aware | 4 | Following `supersedes`/`superseded_by` chains |
+| out-of-scope | 4 | Polite refusal of off-topic questions |
+
+The dataset is uploaded to LangSmith as a **persistent named dataset** (`eac-copilot-golden-v1`) so experiments across commits are directly comparable in the LangSmith UI.
+
+```bash
+make eval                          # full run, ~50 examples × 4 evaluators (~$1-2 OpenAI)
+EAC_EVAL_QUICK=1 make eval         # ~12 examples × keyword_coverage only (CI-friendly)
+```
+
+---
+
+## Testing
+
+```bash
+make test               # unit tests, no API key needed
+make test-integration   # hits OpenAI; runs against tests/test_data/
+make eval               # LangSmith golden-set evals
+```
+
+Tests are sandboxed under `tests/test_data/`. Running the suite never touches your dev `engineering_data.db`, `docs/`, or `chroma_db/`. The `tests/conftest.py` fixture sets the `EAC_*` env vars before any `src.*` import, so the sandbox is invisible to the production code path.
+
+---
+
+## Observability
+
+When `LANGSMITH_API_KEY` and `LANGSMITH_TRACING=true` are set, LangChain/LangGraph automatically push traces to [LangSmith](https://smith.langchain.com). You can inspect every node, tool call, and token cost under the project named by `LANGSMITH_PROJECT`.
+
+---
+
+## Troubleshooting
+
+**`Could not connect to tenant default_tenant`** — your `chroma_db/` is empty, partial, or from a different ChromaDB version. Run `make clean && make setup`.
+
+**File-locked errors on Windows when deleting `chroma_db/`** — exit any running copilot process; `close_connections()` releases the SQLAlchemy engine and ChromaDB handle.
+
+**CI / `.github/workflows/ci.yml`** — unit tests run on every push/PR; the LangSmith eval job runs only when both `OPENAI_API_KEY` and `LANGSMITH_API_KEY` repository secrets are configured.

@@ -5,16 +5,12 @@ from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
+
+from src import config
 
 # Load environment variables (OPENAI_API_KEY)
 load_dotenv()
-
-# Get the absolute root directory of the project (one level up from src/)
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-DOCS_DIR = os.path.join(ROOT_DIR, "docs")
-CHROMA_DB_DIR = os.path.join(ROOT_DIR, "chroma_db")
 
 def calculate_md5(content: str) -> str:
     """Generate an MD5 hash of the string content."""
@@ -98,22 +94,35 @@ def enhance_metadata(chunks):
             chunk.metadata["document_type"] = "runbook"
         elif "adrs" in source_path:
             chunk.metadata["document_type"] = "adr"
+        elif "postmortems" in source_path:
+            chunk.metadata["document_type"] = "postmortem"
+        elif "design_docs" in source_path:
+            chunk.metadata["document_type"] = "design_doc"
         else:
             chunk.metadata["document_type"] = "unknown"
     return chunks
 
-def build_vector_database(docs_dir=DOCS_DIR, chroma_db_dir=CHROMA_DB_DIR):
-    """Main function to build or update the vector database from markdown docs."""
-    
-    if not os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY") == "your_openai_api_key_here":
-        print("ERROR: Please update the .env file with your actual OPENAI_API_KEY.")
-        return
+def build_vector_database(docs_dir=None, chroma_db_dir=None):
+    """Build or update the vector database from markdown docs.
 
-    # 1. Load documents
+    Raises:
+        RuntimeError: if OPENAI_API_KEY is missing or no documents are found.
+            (Silent return here masks setup errors in scripts and CI.)
+    """
+    if docs_dir is None:
+        docs_dir = config.docs_dir()
+    if chroma_db_dir is None:
+        chroma_db_dir = config.chroma_dir()
+
+    if not os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY") == "your_openai_api_key_here":
+        raise RuntimeError("OPENAI_API_KEY is not set. Update .env before building the vector DB.")
+
     documents = load_documents(docs_dir)
     if not documents:
-        print("Please run 'python src/generate_mock_data.py' first to generate the mock documents.")
-        return
+        raise RuntimeError(
+            f"No markdown documents found under '{docs_dir}'. "
+            "Run `python -m src.generate_mock_data` first to populate it."
+        )
     print(f"Loaded {len(documents)} document(s).")
 
     # 2. Get embeddings and vector store

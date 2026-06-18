@@ -3,10 +3,14 @@ langsmith>=0.2.0
 langchain-core
 langchain-community
 langchain-openai
+langchain-chroma
 langgraph
 langchain-experimental
 SQLAlchemy
 pydantic
 chromadb
 python-dotenv
+tenacity
+transformers
+torch
 pytest
