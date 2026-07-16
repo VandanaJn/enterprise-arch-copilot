@@ -21,6 +21,10 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# Create HF_HOME up front so it exists even when the model bake below is skipped
+# (INSTALL_INJECTION_MODEL=false); the later chown depends on it.
+RUN mkdir -p "$HF_HOME"
+
 RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
 
 COPY requirements.txt .
