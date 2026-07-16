@@ -1,11 +1,12 @@
 """Unit tests for incident routing helpers (TDD: pure logic, no LLM)."""
 
-from src.incident_workflow import (
-    route_target_for_mode,
-    latest_user_text,
-    extract_final_assistant_text,
-)
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+from src.incident_workflow import (
+    extract_final_assistant_text,
+    latest_user_text,
+    route_target_for_mode,
+)
 
 
 def test_route_target_for_mode_incident():

@@ -1,7 +1,7 @@
 # Auto-detect venv Python (Windows Scripts\ or Unix bin/); fall back to PATH python.
 PYTHON := $(or $(wildcard venv/Scripts/python.exe),$(wildcard venv/bin/python),python)
 
-.PHONY: help setup run test test-integration eval clean
+.PHONY: help setup run test test-integration eval lint format clean
 
 help:
 	@echo "Targets:"
@@ -10,6 +10,9 @@ help:
 	@echo "  test              Run unit tests (no API key needed)"
 	@echo "  test-integration  Run integration tests (requires OPENAI_API_KEY)"
 	@echo "  eval              Run LangSmith evaluations"
+	@echo "  redteam           Run the guardrail red-team suite (add -m integration for classifier rows)"
+	@echo "  lint              Run ruff checks (lint + format check)"
+	@echo "  format            Auto-fix lint issues and reformat"
 	@echo "  clean             Remove generated docs/, engineering_data.db, chroma_db/"
 
 setup:
@@ -19,13 +22,24 @@ run:
 	$(PYTHON) main.py
 
 test:
-	$(PYTHON) -m pytest tests/ -v -m "not integration and not langsmith_eval" --ignore=tests/eval
+	$(PYTHON) -m pytest tests/ -v -m "not integration and not langsmith_eval"
 
 test-integration:
-	$(PYTHON) -m pytest tests/ -v -m "integration" --ignore=tests/eval
+	$(PYTHON) -m pytest tests/ -v -m "integration"
 
 eval:
 	$(PYTHON) -m pytest tests/eval/ -v -m langsmith_eval
+
+redteam:
+	$(PYTHON) -m pytest tests/test_redteam_guardrails.py -v -s
+
+lint:
+	$(PYTHON) -m ruff check .
+	$(PYTHON) -m ruff format --check .
+
+format:
+	$(PYTHON) -m ruff check . --fix
+	$(PYTHON) -m ruff format .
 
 clean:
 	$(PYTHON) -c "import shutil, os; [shutil.rmtree(p, ignore_errors=True) if os.path.isdir(p) else os.remove(p) for p in ['docs','chroma_db','tests/test_data'] if os.path.exists(p)]; [os.remove('engineering_data.db')] if os.path.exists('engineering_data.db') else None"

@@ -3,20 +3,23 @@ import operator
 import re
 import sqlite3
 import threading
-from typing import Annotated, NotRequired, Sequence, TypedDict
+from collections.abc import Sequence
+from typing import Annotated, NotRequired, TypedDict
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_chroma import Chroma
+from langchain_community.utilities import SQLDatabase
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_community.utilities import SQLDatabase
 from langgraph.graph import END, START, StateGraph
-from sqlalchemy import create_engine, text as sql_text
+from sqlalchemy import create_engine
+from sqlalchemy import text as sql_text
 from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 
 from src import config
+from src.citations import format_doc_result
 from src.incident_workflow import (
     TriageResult,
     extract_final_assistant_text,
@@ -150,7 +153,8 @@ def search_engineering_docs(query: str) -> str:
         )
         if "tenant" in err.lower() or "default_tenant" in err:
             hint = (
-                "This usually means chroma_db is missing, incomplete, or from another ChromaDB version. " + hint
+                "This usually means chroma_db is missing, incomplete, or from another ChromaDB version. "
+                + hint
             )
         return f"Vector database error ({err}). {hint}"
 
@@ -161,9 +165,7 @@ def search_engineering_docs(query: str) -> str:
     for i, doc in enumerate(docs):
         doc_type = doc.metadata.get("document_type", "unknown")
         source = doc.metadata.get("source", "unknown")
-        formatted_results.append(
-            f"--- Document {i+1} (Type: {doc_type}, Source: {source}) ---\n{doc.page_content}"
-        )
+        formatted_results.append(format_doc_result(i + 1, doc_type, source, doc.page_content))
 
     return "\n\n".join(formatted_results)
 
@@ -242,13 +244,13 @@ def query_incidents(service_name: str = "", limit: int = 10) -> str:
                 )
                 params = {"pattern": f"%{_escape_like(service_name)}%", "limit": safe_limit}
             else:
-                stmt = sql_text(
-                    f"{base_sql} ORDER BY i.started_at DESC LIMIT :limit"
-                )
+                stmt = sql_text(f"{base_sql} ORDER BY i.started_at DESC LIMIT :limit")
                 params = {"limit": safe_limit}
             rows = conn.execute(stmt, params).fetchall()
             result = [tuple(r) for r in rows]
-        return f"Incidents (severity, started_at, ended_at, service, summary, postmortem_id): {result}"
+        return (
+            f"Incidents (severity, started_at, ended_at, service, summary, postmortem_id): {result}"
+        )
     except Exception as e:
         return f"Error querying incidents: {str(e)}"
 

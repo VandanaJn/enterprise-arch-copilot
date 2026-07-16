@@ -22,7 +22,7 @@ This document tracks the rationale behind key technical choices for the Enterpri
 
 ### LLM Provider (`langchain-openai`)
 *   **Decision:** Use OpenAI (GPT-4o or `gpt-4o-mini`).
-*   **Rationale:** 
+*   **Rationale:**
     *   Provides the most reliable function-calling/tool-calling capabilities required for an agentic router to decide between SQL and Vector tools.
     *   Excellent native support for `response_format={ "type": "json_object" }` and structured output parsing, which guarantees the agent returns data arrays and thought processes in a machine-readable format that LangGraph can easily route.
 
@@ -30,7 +30,7 @@ This document tracks the rationale behind key technical choices for the Enterpri
 
 ### True Semantic Chunking (`SemanticChunker`)
 *   **Decision:** We are using LangChain's `SemanticChunker` (from `langchain-experimental`).
-*   **Rationale:** `RecursiveCharacterTextSplitter` is *structural* chunking, not *semantic* chunking. 
+*   **Rationale:** `RecursiveCharacterTextSplitter` is *structural* chunking, not *semantic* chunking.
     *   **True Semantic Chunking** embeds every sentence and calculates the cosine distance between them. It groups sentences together into a chunk until the semantic meaning drastically shifts (a "breakpoint"), at which point it starts a new chunk.
     *   **Chunk Size:** Unlike structural splitter, there is **no fixed chunk size** (like 1000 characters). The chunk size is completely variable and is determined dynamically by the meaning of the text. If an architectural explanation is 3 sentences, the chunk is 3 sentences. If the explanation takes 15 sentences before moving to a new topic, the chunk is 15 sentences. You control the length indirectly by adjusting the breakpoint threshold (e.g., `breakpoint_threshold_type="percentile"`).
     *   **Fallback Limit:** We still combine this with a structural splitter as a fallback to enforce a hard maximum limit (e.g., 2000 characters) to protect LLM context windows in cases where a topic never shifts.
@@ -39,7 +39,7 @@ This document tracks the rationale behind key technical choices for the Enterpri
 ### Embedding Model (`OpenAIEmbeddings`)
 *   **Decision:** We are using LangChain's default OpenAI embedding configuration, which resolves to high-dimensionality models (like `text-embedding-ada-002` or `text-embedding-3-small`).
 *   **Rationale & Dimensionality Trade-offs:**
-    *   **High Dimensionality (1536 dimensions):** OpenAI models generate 1536-dimensional vectors. This massive semantic space allows the model to capture highly complex, nuanced engineering concepts (e.g., the architectural differences between Kafka vs. RabbitMQ). 
+    *   **High Dimensionality (1536 dimensions):** OpenAI models generate 1536-dimensional vectors. This massive semantic space allows the model to capture highly complex, nuanced engineering concepts (e.g., the architectural differences between Kafka vs. RabbitMQ).
     *   **Compared to Low Dimensionality (e.g., 384 dimensions):** Smaller, local open-source models (like `all-MiniLM-L6-v2`) are much faster and cheaper to run, but they often collapse complex comparative topics into generic buckets (e.g., just "messaging systems"), reducing RAG accuracy for Staff-level architecture queries.
     *   **The Trade-off (Cost vs. Accuracy):** 1536-dimensional vectors take 4x the RAM and storage in a vector database compared to 384-dimensional vectors, and computing cosine distance at query time is mathematically heavier. For enterprise scale (millions of docs), this strictly increases cloud vector DB hosting costs.
     *   **Why Hosted OpenAI over Local Open-Source (e.g., BAAI/bge-large)?** While models like `bge-large` (1024 dimensions) often beat OpenAI on retrieval benchmarks and offer data privacy, hosting them locally requires PyTorch dependency management and hardware acceleration (GPUs). A reliable, hosted API eliminates that infrastructure complexity for this use case.
@@ -57,7 +57,7 @@ This document tracks the rationale behind key technical choices for the Enterpri
 ### Single-Agent Router vs. Multi-Agent Systems
 *   **Status:** Superseded by *Hybrid Triage-Routed Topology* below.
 *   **Decision:** Use a single-agent router architecture instead of a multi-agent "supervisor" pattern.
-*   **Rationale:** 
+*   **Rationale:**
     *   **Efficiency:** A single-agent router is more token-efficient and reduces latency by avoiding inter-agent communication overhead.
     *   **Iterative Reasoning:** The current router can already perform sequential tool calls (e.g., query SQL then Search Vector DB) within a single execution loop.
     *   **Complexity Management:** Multi-agent systems add significant orchestration complexity (managing handoffs, state merging, and specialized prompts). For the current scope of RAG and SQL retrieval, a single well-prompted agent is more robust and easier to maintain.
@@ -78,8 +78,14 @@ This document tracks the rationale behind key technical choices for the Enterpri
     *   **Tradeoffs accepted:** Incident responses now make 3 LLM calls (structured + runbook + synthesize) plus triage, versus the original single ReAct loop. Latency and token cost both rise on the incident path, justified by the determinism and grounding gains above. State carries `structured_findings` and `runbook_findings` between nodes (see `AgentState` `TypedDict`), which is more graph state than the original router but is still small and serialisable.
 
 ### Retries and Backoff (OpenAI / Chroma)
+*   **Status:** Superseded by *Bounded Retries via tenacity* below.
 *   **Decision:** No retries or circuit breaker in the current demo; failures surface immediately to the user.
 *   **Rationale:** Keeps the codebase simple for portfolio and local use. For production we would add: (1) **Retries with backoff** (e.g. `tenacity` or LangChain’s built-in retry) on transient OpenAI/network errors, with exponential backoff and a max attempt count; (2) **Circuit breaker** (e.g. `pybreaker` or a small state machine) around external calls so repeated failures stop hammering the API and allow partial degradation (e.g. SQL-only mode if Chroma is down). We would also consider timeouts and idempotency for write paths (e.g. vector upserts).
+
+### Bounded Retries via tenacity (supersedes No-Retries stance)
+*   **Decision:** Wrap direct LLM invocations (triage classification and incident-brief synthesis) in `_invoke_with_retry` (`src/agent.py`): `tenacity` retry with `stop_after_attempt(3)` and exponential backoff (1–8s), `reraise=True`, and `retry_if_not_exception_type((KeyboardInterrupt, SystemExit))` so user interrupts are never swallowed.
+*   **Rationale:** Transient OpenAI errors (rate limits, connection resets) were the dominant failure mode in practice, and a bounded retry recovers most of them at negligible cost. Three attempts with capped backoff keeps worst-case added latency small and predictable. Failures after the final attempt still surface immediately, and `triage_node` additionally degrades to `mode="general"` on unrecoverable triage errors rather than declining the request.
+*   **Still out of scope (deliberately):** a circuit breaker around external calls and retry coverage inside the prebuilt ReAct sub-agents (their tool-loop calls go through LangChain directly). Both remain documented production follow-ups; the demo favors simplicity over full resilience machinery.
 
 ### Observability (LangSmith)
 *   **Decision:** Use LangSmith for tracing when configured via environment variables (`LANGSMITH_API_KEY`, `LANGSMITH_TRACING`, `LANGSMITH_PROJECT`). No application code changes are required; LangChain/LangGraph auto-instrument when these are set.
@@ -107,3 +113,24 @@ This document tracks the rationale behind key technical choices for the Enterpri
     *   **Why the SQLAlchemy `creator` pattern over the `sqlite:///file:...?mode=ro` URL?** First attempt used `create_engine("sqlite:///file:{path}?mode=ro", connect_args={"uri": True})`. On Windows this failed with `OperationalError: unable to open database file` because SQLAlchemy's `sqlite:///` URL parser treated `file:C:/...` as a relative filesystem path and prepended the current working directory, producing a malformed `cwd + literal 'file:' + path` string before handing it to sqlite3. The `creator` callable receives no SQLAlchemy URL processing — the URI is passed verbatim to `sqlite3.connect()`. This is portable across OS path conventions and avoids drive-letter / leading-slash workarounds.
     *   **Tradeoff accepted:** The DB file must exist before `get_sql_db()` is first invoked. `make setup` already enforces this in normal flow, and the test fixture `seeded_sqlite` in `tests/test_guardrails.py` calls `generate_structured_data()` (and `close_connections()`) before any tool exercises the connection.
     *   **Test impact:** Zero regressions. The 43 tests in `tests/test_guardrails.py` continue to pass — the regex check at the tool boundary is still the first gate, and the OS-level guarantee is a redundant layer below it that the existing assertions never had to exercise directly.
+
+## 5. Evaluation Strategy
+
+### Golden Set v2: expected-source annotations and harder categories
+*   **Decision:** Evolve `tests/eval/golden_set.json` from 50 to 103 examples with two backward-compatible optional fields, `expected_sources` (list of doc-ID stems the retriever must fetch) and `expected_not_found` (ground truth is absence of data), and two new categories: `negative` (nonexistent services/docs/teams; the correct answer is "not found") and `adversarial-scope` (out-of-scope requests dressed in PayLane vocabulary that must still be declined). The LangSmith dataset name bumps to `eac-copilot-golden-v2`; v1 is kept so historical experiments stay comparable within their own schema.
+*   **Rationale:**
+    *   **Stems, not paths.** `expected_sources` uses filename stems (e.g. `002-adopt-kafka-event-streaming`) because the same document lives at `docs/...` in dev and `tests/test_data/docs/...` in the sandbox; a path-based annotation would break depending on where the eval runs. Stems are unique across the corpus.
+    *   **Negative cases catch confident hallucination.** A RAG agent that invents an owner for `cart-service` scores fine on keyword metrics; only an example whose reference facts state "this does not exist" exposes it.
+    *   **Schema drift fails CI, not eval runs.** `scripts/validate_golden_set.py` (run as a plain unit test in `tests/eval/test_golden_set_schema.py`) checks unique IDs, known categories, and that every `expected_sources` stem resolves to a real file under `templates/mock_docs/`, so a corpus rename or annotation typo fails the build offline instead of surfacing mid-eval after spending API credits.
+
+### Retrieval-quality evaluators: parse tool messages, don't plumb graph state
+*   **Decision:** `retrieval_recall` and `retrieval_precision` (deterministic, free) compare `expected_sources` against the doc stems the agent actually retrieved. The retrieved stems are recovered by parsing `search_engineering_docs` ToolMessages with `src/citations.py`, which co-owns the tool-result header format (`format_doc_result`) and its parser (`extract_retrieved_sources`). The eval target returns them alongside the answer (`{"output", "retrieved_sources"}`).
+*   **Rationale:** This cleanly separates *retrieval* failures (low recall: the RAG layer missed the doc) from *generation* failures (good recall but bad factuality: the LLM had the right context and still answered wrong), which is the diagnostic question every RAG regression starts with. Parsing the messages the graph already emits requires zero changes to production state or node wiring (no eval-only fields leak into `AgentState`), and keeping the format and parser in one module means they cannot drift apart.
+
+### Guardrail red-team suite: pytest, not LangSmith; rates, not rows
+*   **Decision:** `tests/eval/redteam_set.json` (~40 adversarial inputs + benign controls) runs through `tests/test_redteam_guardrails.py` as plain pytest. Assertions are **block-rates per attack family** (SQL families at 1.0 since the guard is deterministic; injection families at 0.8/0.75/0.5 for direct/roleplay/obfuscated) plus a **1.0 allow-rate on benign controls** as the false-positive guard. Adversarial cases that need an LLM to classify (scope probes) live in the golden set's `adversarial-scope` category instead.
+*   **Rationale:** The guards under test (`_is_readonly_sql`, input validation, the DeBERTa classifier) are local, deterministic-ish, and free; pytest thresholds *are* the regression tracker, and putting them in LangSmith would add API-key friction for zero comparability gain. Rate-based assertions let known classifier misses stay in the dataset as the residual-risk record rather than being deleted to make tests green. The split rule is simple: LLM in the loop → LangSmith golden set; no LLM → pytest.
+
+### Cost & latency: surface what LangSmith records, don't build a dashboard
+*   **Decision:** `tests/eval/run_report.py` aggregates the rows `langsmith.evaluate()` returns (tokens, cost, p50/p95 latency, per-evaluator and per-category means), prints a table, and writes `eval_reports/eval_report.json` (uploaded as a CI artifact on manual eval runs). Nothing new is instrumented.
+*   **Rationale:** LangSmith root runs already carry token counts, cost, and timing; building collection would duplicate it. Cross-commit comparison happens by diffing artifacts or in the LangSmith experiments UI. The one non-obvious fix shipped with this: the unit-test sandbox in `tests/conftest.py` applies to *every* pytest session (ancestor conftests load even for `pytest tests/eval/`), which would have silently pointed evals at the empty `tests/test_data/` corpus. `test_langsmith_eval.py` now removes the `EAC_*` overrides in a module-scoped fixture so evals always hit the real corpus.

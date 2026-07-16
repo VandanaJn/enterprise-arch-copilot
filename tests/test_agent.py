@@ -34,9 +34,11 @@ def _collect_tool_calls_from_stream(graph, inputs):
 @pytest.mark.integration
 def test_vector_tool_execution(built_test_data):
     result = search_engineering_docs.invoke(
-        {"query": "What was the rationale behind migrating our payment gateway to the new AWS architecture?"}
+        {
+            "query": "What was the rationale behind migrating our payment gateway to the new AWS architecture?"
+        }
     )
-    
+
     result_lower = result.lower()
     assert "elasticity" in result_lower or "auto-scaling" in result_lower, (
         f"Expected 'elasticity' or 'auto-scaling' in result, got:\n{result}"

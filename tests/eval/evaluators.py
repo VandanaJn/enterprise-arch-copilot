@@ -1,7 +1,12 @@
 """LangSmith evaluators for the Enterprise Architecture Copilot.
 
-Four evaluators run per example:
+Evaluators run per example:
 - keyword_coverage: deterministic, fraction of expected keywords present in the output.
+- retrieval_recall / retrieval_precision: deterministic, compare the doc-ID stems the
+  agent actually retrieved (outputs["retrieved_sources"]) against the example's
+  expected_sources annotation. These separate retrieval failures from generation
+  failures: low recall means the RAG layer missed the doc; good recall with bad
+  factuality means generation went wrong despite the right context.
 - factuality: LLM-as-judge — does the output agree with reference_facts?
 - groundedness: LLM-as-judge — does the output stick to PayLane domain language and concrete facts?
 - appropriate_decline: LLM-as-judge — for out-of-scope examples, did the agent decline politely?
@@ -14,13 +19,13 @@ instantiated lazily and reused via `_get_judge()`.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any, Literal, Optional
+from typing import Literal
 
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
-
 # --- Shared judge LLM ---------------------------------------------------------
+
 
 @lru_cache(maxsize=1)
 def _get_judge() -> ChatOpenAI:
@@ -29,8 +34,9 @@ def _get_judge() -> ChatOpenAI:
 
 # --- Deterministic: keyword_coverage -----------------------------------------
 
+
 def keyword_coverage(
-    inputs: dict, reference_outputs: Optional[dict] = None, outputs: Optional[dict] = None
+    inputs: dict, reference_outputs: dict | None = None, outputs: dict | None = None
 ) -> dict:
     """Fraction of expected keywords (case-insensitive) present in the output.
 
@@ -54,7 +60,57 @@ def keyword_coverage(
     return row
 
 
+# --- Deterministic: retrieval quality -----------------------------------------
+
+
+def _retrieval_sets(reference_outputs: dict | None, outputs: dict | None) -> tuple[set, set]:
+    expected = {s.lower() for s in (reference_outputs or {}).get("expected_sources") or []}
+    retrieved = {s.lower() for s in (outputs or {}).get("retrieved_sources") or []}
+    return expected, retrieved
+
+
+def retrieval_recall(
+    inputs: dict, reference_outputs: dict | None = None, outputs: dict | None = None
+) -> dict:
+    """Fraction of expected source docs the agent actually retrieved.
+
+    Score is None (skipped) when the example carries no expected_sources annotation,
+    e.g. SQL-only factual lookups where doc retrieval isn't part of ground truth.
+    """
+    expected, retrieved = _retrieval_sets(reference_outputs, outputs)
+    row: dict = {"key": "retrieval_recall"}
+    if not expected:
+        row["score"] = None
+        row["comment"] = "no expected_sources annotated; skipped"
+        return row
+    hits = expected & retrieved
+    row["score"] = len(hits) / len(expected)
+    row["comment"] = f"{len(hits)}/{len(expected)} expected sources retrieved"
+    return row
+
+
+def retrieval_precision(
+    inputs: dict, reference_outputs: dict | None = None, outputs: dict | None = None
+) -> dict:
+    """Fraction of retrieved docs that were expected (annotated examples only)."""
+    expected, retrieved = _retrieval_sets(reference_outputs, outputs)
+    row: dict = {"key": "retrieval_precision"}
+    if not expected:
+        row["score"] = None
+        row["comment"] = "no expected_sources annotated; skipped"
+        return row
+    if not retrieved:
+        row["score"] = 0.0
+        row["comment"] = "expected sources but nothing was retrieved"
+        return row
+    hits = expected & retrieved
+    row["score"] = len(hits) / len(retrieved)
+    row["comment"] = f"{len(hits)}/{len(retrieved)} retrieved sources were expected"
+    return row
+
+
 # --- Pydantic schemas for LLM-as-judge ---------------------------------------
+
 
 class _Verdict(BaseModel):
     score: Literal[0, 1] = Field(..., description="0 = bad, 1 = good")
@@ -97,7 +153,7 @@ Return your verdict via the structured schema."""
 
 
 def factuality(
-    inputs: dict, reference_outputs: Optional[dict] = None, outputs: Optional[dict] = None
+    inputs: dict, reference_outputs: dict | None = None, outputs: dict | None = None
 ) -> dict:
     question = (inputs or {}).get("question", "")
     reference_facts = (reference_outputs or {}).get("reference_facts", "")
@@ -138,7 +194,7 @@ Return your verdict via the structured schema."""
 
 
 def groundedness(
-    inputs: dict, reference_outputs: Optional[dict] = None, outputs: Optional[dict] = None
+    inputs: dict, reference_outputs: dict | None = None, outputs: dict | None = None
 ) -> dict:
     question = (inputs or {}).get("question", "")
     answer = (outputs or {}).get("output", "")
@@ -177,7 +233,7 @@ Return your verdict via the structured schema."""
 
 
 def appropriate_decline(
-    inputs: dict, reference_outputs: Optional[dict] = None, outputs: Optional[dict] = None
+    inputs: dict, reference_outputs: dict | None = None, outputs: dict | None = None
 ) -> dict:
     question = (inputs or {}).get("question", "")
     answer = (outputs or {}).get("output", "")
@@ -196,4 +252,14 @@ def appropriate_decline(
     }
 
 
-ALL_EVALUATORS = [keyword_coverage, factuality, groundedness, appropriate_decline]
+ALL_EVALUATORS = [
+    keyword_coverage,
+    retrieval_recall,
+    retrieval_precision,
+    factuality,
+    groundedness,
+    appropriate_decline,
+]
+
+# Free evaluators safe for quick/CI mode (no LLM-judge calls).
+DETERMINISTIC_EVALUATORS = [keyword_coverage, retrieval_recall, retrieval_precision]

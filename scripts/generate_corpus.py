@@ -17,7 +17,6 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Optional
 
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
@@ -33,9 +32,10 @@ CORPUS_ROOT = REPO_ROOT / "templates" / "mock_docs"
 
 # --- Doc type configuration ----------------------------------------------------
 
+
 class DocTypeConfig(BaseModel):
-    prefix: str          # ID prefix, e.g. "ADR"
-    dir_name: str        # subdir under templates/mock_docs
+    prefix: str  # ID prefix, e.g. "ADR"
+    dir_name: str  # subdir under templates/mock_docs
     structure_hint: str  # body section guidance
     topic_pool: list[str]
 
@@ -144,22 +144,35 @@ DOC_TYPES: dict[str, DocTypeConfig] = {
 
 # --- Pydantic schema for structured output -------------------------------------
 
+
 class DocFrontmatter(BaseModel):
-    id: str = Field(..., description="ID like ADR-007 / RB-012 / PM-2024-003 / DD-002. Must match the requested ID.")
+    id: str = Field(
+        ...,
+        description="ID like ADR-007 / RB-012 / PM-2024-003 / DD-002. Must match the requested ID.",
+    )
     title: str = Field(..., description="Short title, sentence case, no leading article")
     status: str = Field(..., description="One of: Proposed, Accepted, Deprecated, Superseded")
-    date: str = Field(..., description="ISO date YYYY-MM-DD; must be plausible given the engineering timeline")
+    date: str = Field(
+        ..., description="ISO date YYYY-MM-DD; must be plausible given the engineering timeline"
+    )
     authors: list[str] = Field(..., description="Owning team handles like 'team-alpha'")
-    services: list[str] = Field(..., description="Service names from the catalog this doc references")
+    services: list[str] = Field(
+        ..., description="Service names from the catalog this doc references"
+    )
     supersedes: list[str] = Field(default_factory=list, description="IDs this replaces, if any")
-    superseded_by: Optional[str] = Field(default=None, description="ID that replaced this one, if any")
-    related_to: list[str] = Field(default_factory=list, description="Related doc IDs (other ADRs / runbooks / postmortems)")
+    superseded_by: str | None = Field(default=None, description="ID that replaced this one, if any")
+    related_to: list[str] = Field(
+        default_factory=list, description="Related doc IDs (other ADRs / runbooks / postmortems)"
+    )
 
 
 class GeneratedDoc(BaseModel):
     frontmatter: DocFrontmatter
     slug: str = Field(..., description="kebab-case filename slug, 3-6 words, no extension")
-    body_markdown: str = Field(..., description="Markdown body. Do NOT include the YAML frontmatter or top-level # title heading.")
+    body_markdown: str = Field(
+        ...,
+        description="Markdown body. Do NOT include the YAML frontmatter or top-level # title heading.",
+    )
 
 
 # --- Generation prompt assembly ------------------------------------------------
@@ -176,7 +189,7 @@ def _build_user_prompt(
     doc_type: str,
     cfg: DocTypeConfig,
     requested_id: str,
-    topic: Optional[str],
+    topic: str | None,
     existing_docs_summary: str,
 ) -> str:
     return f"""## Company spec (single source of truth)
@@ -262,11 +275,7 @@ def next_id(existing_ids: set[str], prefix: str) -> str:
     if prefix == "PM":
         # Most recent year wins; default 2024
         year = 2024
-        used_for_year = {
-            int(i.split("-")[2])
-            for i in existing_ids
-            if i.startswith(f"PM-{year}-")
-        }
+        used_for_year = {int(i.split("-")[2]) for i in existing_ids if i.startswith(f"PM-{year}-")}
         n = 1
         while n in used_for_year:
             n += 1
@@ -286,7 +295,13 @@ def slugify(text: str) -> str:
 def render_markdown(doc: GeneratedDoc) -> str:
     """Compose the final .md content from structured fields."""
     fm = doc.frontmatter
-    lines = ["---", f"id: {fm.id}", f"title: {fm.title}", f"status: {fm.status}", f"date: {fm.date}"]
+    lines = [
+        "---",
+        f"id: {fm.id}",
+        f"title: {fm.title}",
+        f"status: {fm.status}",
+        f"date: {fm.date}",
+    ]
     lines.append(f"authors: [{', '.join(fm.authors)}]")
     lines.append(f"services: [{', '.join(fm.services)}]")
     if fm.supersedes:
@@ -315,17 +330,20 @@ def filename_for(doc_id: str, slug: str, prefix: str) -> str:
 
 # --- Generation orchestration --------------------------------------------------
 
+
 def generate_one(
     llm,
     spec_text: str,
     doc_type: str,
     cfg: DocTypeConfig,
     requested_id: str,
-    topic: Optional[str],
+    topic: str | None,
     existing_docs_summary: str,
 ) -> GeneratedDoc:
     structured_llm = llm.with_structured_output(GeneratedDoc)
-    prompt = _build_user_prompt(spec_text, doc_type, cfg, requested_id, topic, existing_docs_summary)
+    prompt = _build_user_prompt(
+        spec_text, doc_type, cfg, requested_id, topic, existing_docs_summary
+    )
     result: GeneratedDoc = structured_llm.invoke(
         [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}]
     )
@@ -336,12 +354,21 @@ def generate_one(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--type", required=True, choices=list(DOC_TYPES))
-    parser.add_argument("--count", type=int, default=1, help="Number of new docs to generate (ignored if --id is set)")
+    parser.add_argument(
+        "--count",
+        type=int,
+        default=1,
+        help="Number of new docs to generate (ignored if --id is set)",
+    )
     parser.add_argument("--id", help="Generate a specific ID, e.g. ADR-007")
     parser.add_argument("--topic", help="Optional topic hint for this generation")
-    parser.add_argument("--force", action="store_true", help="Overwrite existing files at the same ID")
+    parser.add_argument(
+        "--force", action="store_true", help="Overwrite existing files at the same ID"
+    )
     parser.add_argument("--model", default=os.getenv("EAC_GENERATION_MODEL", "gpt-4o"))
     args = parser.parse_args()
 
@@ -373,7 +400,9 @@ def main() -> None:
 
     for i, doc_id in enumerate(ids_to_make, 1):
         if doc_id in existing and not args.force:
-            print(f"  [{i}/{len(ids_to_make)}] {doc_id}: SKIP (already exists, use --force to overwrite)")
+            print(
+                f"  [{i}/{len(ids_to_make)}] {doc_id}: SKIP (already exists, use --force to overwrite)"
+            )
             continue
 
         print(f"  [{i}/{len(ids_to_make)}] {doc_id}: generating...", end=" ", flush=True)
@@ -404,7 +433,9 @@ def main() -> None:
         existing[doc_id] = out_path
         print(f"-> {out_path.relative_to(REPO_ROOT)}")
 
-    print(f"[generate_corpus] done. {len(list_existing(target_dir))} doc(s) in {target_dir.relative_to(REPO_ROOT)}")
+    print(
+        f"[generate_corpus] done. {len(list_existing(target_dir))} doc(s) in {target_dir.relative_to(REPO_ROOT)}"
+    )
 
 
 if __name__ == "__main__":

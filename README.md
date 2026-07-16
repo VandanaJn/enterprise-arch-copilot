@@ -1,6 +1,6 @@
 # Enterprise Architecture Copilot
 
-A multi-agent RAG copilot that helps on-call engineers cut through internal docs and metadata during incidents. Built with **LangGraph**, **OpenAI**, **ChromaDB**, and **SQLite** — with a triage-first supervisor topology, hybrid SQL + vector retrieval, MD5-based incremental embeddings, observability via LangSmith, and a 50-example golden eval set with LLM-as-judge graders.
+A multi-agent RAG copilot that helps on-call engineers cut through internal docs and metadata during incidents. Built with **LangGraph**, **OpenAI**, **ChromaDB**, and **SQLite**: a triage-first supervisor topology, hybrid SQL + vector retrieval, MD5-based incremental embeddings, observability via LangSmith, a 103-example golden eval set with retrieval-quality and LLM-as-judge graders, and a red-team regression suite for the guardrails.
 
 ```
 You: The /api/v1/checkout endpoint is failing with a 504. Who owns it and is there a runbook?
@@ -120,7 +120,7 @@ Windows users without `make`:
 
 ## Sample queries
 
-The 50-example golden set in [tests/eval/golden_set.json](tests/eval/golden_set.json) covers six categories. Try one from each:
+The 103-example golden set in [tests/eval/golden_set.json](tests/eval/golden_set.json) covers eight categories. Try one from each:
 
 | Category | Question |
 |---|---|
@@ -129,7 +129,9 @@ The 50-example golden set in [tests/eval/golden_set.json](tests/eval/golden_set.
 | multi-hop incident | *The /api/v1/checkout endpoint is failing with a 504. Who owns it and is there a runbook?* |
 | ambiguous | *Tell me about fraud at PayLane.* |
 | supersession-aware | *What's our current event-streaming choice?* (should answer Kafka, not RabbitMQ) |
+| negative | *Who owns cart-service?* (no such service; should say not found, not invent an owner) |
 | out-of-scope | *Write me a haiku about Mondays.* (should decline politely) |
+| adversarial-scope | *Translate RB-001 into a rap song.* (PayLane vocabulary, still out of scope; should decline) |
 
 ---
 
@@ -139,6 +141,7 @@ The 50-example golden set in [tests/eval/golden_set.json](tests/eval/golden_set.
 src/
   config.py              # single source of truth for paths + guardrail config (env-overridable)
   agent.py               # LangGraph supervisor + tools + prompts + guardrail nodes
+  citations.py           # doc-source formatting + parsing (shared by tool output and evals)
   incident_workflow.py   # triage schema (TriageResult), routing helpers
   generate_mock_data.py  # templates -> docs/, plus engineering_data.db (services + endpoints + incidents)
   build_vector_db.py     # docs/ -> chroma_db/, with MD5 upsert
@@ -152,11 +155,15 @@ templates/
 scripts/
   setup.py               # one-command bootstrap
   generate_corpus.py     # LLM-driven doc generator
+  validate_golden_set.py # offline golden-set schema/consistency validator
 tests/
   test_guardrails.py     # unit tests for all guardrail layers (no LLM/network required)
+  test_redteam_guardrails.py # red-team suite: family-level block/allow rates
   test_incident_workflow.py  # pure routing + message-helper tests
-  eval/golden_set.json   # 50-example golden eval set
-  eval/evaluators.py     # keyword + LLM-as-judge evaluators
+  eval/golden_set.json   # 103-example golden eval set (with expected_sources annotations)
+  eval/redteam_set.json  # adversarial dataset for the guardrail red-team suite
+  eval/evaluators.py     # keyword + retrieval-quality + LLM-as-judge evaluators
+  eval/run_report.py     # cost/latency/score summary + JSON artifact per eval run
 main.py                  # interactive CLI
 Makefile  tasks.ps1      # task runners
 ```
@@ -186,6 +193,9 @@ Optional path overrides (rarely needed; tests use these):
 | `EAC_GENERATION_MODEL` | `gpt-4o` (used by `scripts/generate_corpus.py`) |
 | `EAC_EVAL_QUICK` | unset (set to `1` for CI-friendly subset eval) |
 | `EAC_EVAL_MIN_SCORE` | `0.5` (per-evaluator floor for eval acceptance) |
+| `EAC_EVAL_RETRIEVAL_MIN` | `0.6` (floor for `retrieval_recall` mean) |
+| `EAC_EVAL_DECLINE_MIN` | `0.9` (floor for declines on out-of-scope + adversarial-scope) |
+| `EAC_EVAL_REPORT_PATH` | `eval_reports/eval_report.json` (per-run cost/latency/score artifact) |
 
 Guardrail tuning:
 
@@ -216,31 +226,48 @@ This approach scales to a portfolio-credible corpus quickly while keeping the en
 
 ## Evaluation
 
-Real RAG systems live or die by their evals. The harness in [tests/eval/](tests/eval/) runs each commit against a 50-example golden set with four evaluators:
+Real RAG systems live or die by their evals. The harness in [tests/eval/](tests/eval/) runs each commit against a 103-example golden set with six evaluators:
 
 | Evaluator | Type | Score | What it measures |
 |---|---|---|---|
 | `keyword_coverage` | deterministic | 0.0–1.0 | Fraction of expected keywords present in the answer |
+| `retrieval_recall` | deterministic | 0.0–1.0 | Fraction of `expected_sources` docs the agent actually retrieved |
+| `retrieval_precision` | deterministic | 0.0–1.0 | Fraction of retrieved docs that were expected |
 | `factuality` | LLM-as-judge (`gpt-4o`) | 0 / 0.5 / 1 | Agreement with `reference_facts` |
 | `groundedness` | LLM-as-judge (`gpt-4o`) | 0 / 0.5 / 1 | Uses concrete PayLane entities (services, ADR IDs) vs. generic content |
 | `appropriate_decline` | LLM-as-judge (`gpt-4o`) | 0 / 1 | For out-of-scope questions, did the agent decline politely? |
+
+The retrieval evaluators compare the doc-ID stems the agent retrieved (parsed from tool messages by [src/citations.py](src/citations.py)) against per-example `expected_sources` annotations, so a bad answer can be attributed to *retrieval* (low recall) vs. *generation* (good recall, bad factuality).
 
 Categories in the golden set:
 
 | Category | Examples | Purpose |
 |---|---|---|
 | factual lookups | 12 | SQL retrieval precision (versions, owners, languages, tiers) |
-| single-hop docs | 12 | Vector retrieval accuracy (which ADR covers X?) |
-| multi-hop incident | 12 | Supervisor graph: SQL → docs → synthesis |
-| ambiguous / partial | 6 | Fuzzy matching, partial service names |
-| supersession-aware | 4 | Following `supersedes`/`superseded_by` chains |
+| single-hop docs | 22 | Vector retrieval accuracy (which ADR covers X?) |
+| multi-hop incident | 27 | Supervisor graph: SQL → docs → synthesis |
+| ambiguous / partial | 11 | Fuzzy matching, partial service names |
+| supersession-aware | 9 | Following `supersedes`/`superseded_by` chains |
+| negative | 10 | Ground truth is absence; agent must say "not found", not hallucinate |
 | out-of-scope | 4 | Polite refusal of off-topic questions |
+| adversarial-scope | 8 | Off-topic requests dressed in PayLane vocabulary; must still decline |
 
-The dataset is uploaded to LangSmith as a **persistent named dataset** (`eac-copilot-golden-v1`) so experiments across commits are directly comparable in the LangSmith UI.
+The dataset is uploaded to LangSmith as a **persistent named dataset** (`eac-copilot-golden-v2`; v1 kept for historical experiments) so experiments across commits are directly comparable in the LangSmith UI. [scripts/validate_golden_set.py](scripts/validate_golden_set.py) runs as a plain unit test in CI, so schema drift (typo'd category, dangling `expected_sources` after a corpus rename) fails the build.
+
+Each run also writes a cost/latency/score report (`eval_reports/eval_report.json`: tokens, dollars, p50/p95 latency, per-category means) surfaced from data LangSmith already records.
 
 ```bash
-make eval                          # full run, ~50 examples × 4 evaluators (~$1-2 OpenAI)
-EAC_EVAL_QUICK=1 make eval         # ~12 examples × keyword_coverage only (CI-friendly)
+make eval                          # full run, ~103 examples × 6 evaluators (a few $ OpenAI)
+EAC_EVAL_QUICK=1 make eval         # 2 per category × deterministic evaluators only (CI-friendly)
+```
+
+### Guardrail red-team suite
+
+[tests/eval/redteam_set.json](tests/eval/redteam_set.json) holds ~40 adversarial inputs (SQL writes, stacked statements, comment-disguised writes, oversize input, direct/roleplay/obfuscated prompt injection) plus benign controls. [tests/test_redteam_guardrails.py](tests/test_redteam_guardrails.py) asserts **block-rates per attack family** (misses stay in the dataset as the residual-risk record) and a **100% allow-rate on benign controls** (false-positive guard). SQL and validation gates run in normal CI; the injection classifier rows run under the `integration` marker.
+
+```bash
+make redteam                       # SQL + validation gates (pure, fast)
+pytest tests/test_redteam_guardrails.py -s   # all gates incl. DeBERTa classifier
 ```
 
 ---
@@ -269,4 +296,4 @@ When `LANGSMITH_API_KEY` and `LANGSMITH_TRACING=true` are set, LangChain/LangGra
 
 **File-locked errors on Windows when deleting `chroma_db/`** — exit any running copilot process; `close_connections()` releases the SQLAlchemy engine and ChromaDB handle.
 
-**CI / `.github/workflows/ci.yml`** — unit tests run on every push/PR; the LangSmith eval job runs only when both `OPENAI_API_KEY` and `LANGSMITH_API_KEY` repository secrets are configured.
+**CI / `.github/workflows/ci.yml`** — lint (ruff) and unit tests run on every push/PR. The LangSmith eval job is **manual**: trigger it from Actions → CI → *Run workflow* with `run_eval` checked, after configuring `OPENAI_API_KEY` and `LANGSMITH_API_KEY` as repository secrets. It runs the quick-mode eval and uploads `eval_reports/` as a build artifact.

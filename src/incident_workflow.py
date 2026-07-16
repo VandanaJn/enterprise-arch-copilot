@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Literal, Sequence
+from collections.abc import Sequence
+from typing import Literal
 
 from langchain_core.messages import AIMessage, AnyMessage, BaseMessage
 from pydantic import BaseModel, Field

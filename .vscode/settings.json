@@ -1,6 +1,0 @@
-{
-    "python.defaultInterpreterPath": "c:\\learning\\rag\\venv\\Scripts\\python.exe",
-    "python.analysis.extraPaths": [
-        "c:\\learning\\rag\\venv\\Lib\\site-packages"
-    ]
-}

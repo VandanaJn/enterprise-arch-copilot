@@ -1,5 +1,5 @@
-# No path overrides needed here. src.config exposes paths as functions that read
-# EAC_* env vars at call time. Eval tests run against the real corpus by default
-# (no sandbox env vars are set when `pytest tests/eval/` is invoked directly).
-# The tests/conftest.py sandbox only applies when running the full test suite,
-# in which case eval tests are excluded via --ignore=tests/eval anyway.
+# No fixtures needed here. src.config exposes paths as functions that read EAC_*
+# env vars at call time. The unit-test sandbox in tests/conftest.py applies to every
+# session (pytest loads ancestor conftests even for `pytest tests/eval/`), so
+# test_langsmith_eval.py explicitly removes the EAC_* overrides in a module-scoped
+# fixture; evals must run against the real corpus, not tests/test_data/.
