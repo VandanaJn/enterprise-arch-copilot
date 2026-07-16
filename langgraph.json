@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "copilot": "./src/agent.py:create_enterprise_copilot"
+  },
+  "env": ".env"
+}

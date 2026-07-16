@@ -3,6 +3,19 @@ name = "enterprise-arch-copilot"
 version = "0.1.0"
 description = "Multi-agent RAG incident copilot for a fictional payments SaaS (LangGraph, ChromaDB, SQLite)"
 requires-python = ">=3.12"
+dynamic = ["dependencies"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+# requirements.txt stays the single pinned source of truth; pyproject reads it so
+# `pip install .` and LangGraph Platform (langgraph.json -> ["."]) install the same set.
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools]
+packages = ["src", "src.api"]
 
 [tool.ruff]
 line-length = 100

@@ -26,7 +26,8 @@ The fictional company **PayLane** (a payments-processing SaaS) is the data domai
 - **Retrieval-Augmented Generation done with care.** Semantic chunking via `SemanticChunker`, MD5 hash-based incremental upserts (no duplicate embeddings on rerun), and explicit `document_type` metadata for hybrid filtering.
 - **Hybrid retrieval.** A single user query can cross both a SQLite service catalog and a Chroma vector store, with the agent deciding when each is needed.
 - **Agent guardrails.** A layered defence-in-depth stack applied before any LLM call: input length + empty-message validation → ML-based prompt-injection detection (ProtectAI `deberta-v3-base-prompt-injection-v2`) → LLM triage with `out_of_scope` routing → tool-level SQL read-only enforcement and injection-safe parametrised queries.
-- **Observability.** Optional LangSmith tracing — every node, tool call, and token cost is captured.
+- **Deployable service.** A FastAPI + SSE API ([src/api/](src/api/)) streams tokens and tool calls, with a Dockerfile (CPU-only torch), `langgraph.json` for LangGraph Platform, and a Hugging Face Spaces deploy guide.
+- **Observability.** LangSmith tracing for the LLM/agent layer; structured JSON logs, Prometheus `/metrics`, and guardrail-block counters for the service layer.
 - **Evaluation.** Golden-set evals in `tests/eval/` use `langsmith.evaluate()`.
 - **Resilience.** Tenacity-backed retry on LLM calls, narrowed exception handling, thread-safe lazy singletons for DB connections, and Windows-aware connection cleanup.
 - **Honest test isolation.** Tests run against `tests/test_data/` — never the developer's real data directory. Running the full suite is non-destructive.
@@ -145,6 +146,11 @@ src/
   incident_workflow.py   # triage schema (TriageResult), routing helpers
   generate_mock_data.py  # templates -> docs/, plus engineering_data.db (services + endpoints + incidents)
   build_vector_db.py     # docs/ -> chroma_db/, with MD5 upsert
+  api/
+    app.py               # FastAPI factory: /chat (SSE), /healthz, /metrics, lifespan
+    sse.py               # pure SSE event builders + astream adapter (token/tool filtering)
+    observability.py     # JSON logging, request-id middleware, /metrics, guardrail counters
+    rate_limit.py        # in-memory sliding-window limiter (public-demo abuse guard)
 templates/
   company_spec.md        # fictional company spec (seeds LLM generation)
   mock_docs/
@@ -165,6 +171,9 @@ tests/
   eval/evaluators.py     # keyword + retrieval-quality + LLM-as-judge evaluators
   eval/run_report.py     # cost/latency/score summary + JSON artifact per eval run
 main.py                  # interactive CLI
+Dockerfile  docker-compose.yml   # container build + local compose workflow
+langgraph.json           # LangGraph Platform graph manifest
+deploy/huggingface.md    # Hugging Face Spaces deploy guide
 Makefile  tasks.ps1      # task runners
 ```
 
@@ -205,6 +214,15 @@ Guardrail tuning:
 | `EAC_RECURSION_LIMIT` | `20` | LangGraph max node visits per run (fail-fast on runaway loops) |
 | `EAC_PROMPT_INJECTION_THRESHOLD` | `0.85` | Minimum confidence score to block as injection |
 | `EAC_PROMPT_INJECTION_MODEL` | `protectai/deberta-v3-base-prompt-injection-v2` | HuggingFace model ID for the injection classifier |
+
+API service tuning:
+
+| Var | Default | Purpose |
+|---|---|---|
+| `PORT` | `8000` | Port the server listens on (Spaces sets `7860`) |
+| `EAC_RATE_LIMIT_PER_MIN` | `0` (off) | Max `POST /chat` requests per client IP per minute |
+| `EAC_DEBUG` | `0` | `1` includes the LangSmith `run_id` in the SSE `done` event |
+| `EAC_WARM_INJECTION_DETECTOR` | `1` | Load the injection classifier at startup vs. lazily |
 
 ---
 
@@ -284,9 +302,43 @@ Tests are sandboxed under `tests/test_data/`. Running the suite never touches yo
 
 ---
 
+## Deployment
+
+The agent is exposed as a FastAPI service ([src/api/](src/api/)) that streams responses over Server-Sent Events. The compiled graph, the guardrails, the injection classifier, and the on-disk data stores all run in one process; the only runtime dependency is the OpenAI API.
+
+**Run locally:**
+
+```bash
+make serve                 # uvicorn on http://127.0.0.1:8000
+```
+
+```bash
+# stream an incident brief (SSE): node -> tool_call -> token -> done events
+curl -N -X POST http://127.0.0.1:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"The /api/v1/checkout endpoint is throwing 504s. Who owns it and is there a runbook?"}'
+```
+
+Endpoints: `POST /chat` (SSE; `{message, thread_id?}`, server mints a `thread_id` when omitted), `GET /healthz` (503 until the data files exist), `GET /metrics` (Prometheus), `GET /` (service info).
+
+**Docker** (CPU-only torch; data lives under `./data`, mounted read-only):
+
+```bash
+docker compose run --rm setup   # generate data/ (no host Python needed)
+docker compose up               # serve on http://localhost:8000
+```
+
+**LangGraph Platform**: [langgraph.json](langgraph.json) exposes the graph factory, so `langgraph dev` (free Developer tier, self-hosted) runs it with LangGraph Studio and the [Agent Chat UI](https://github.com/langchain-ai/agent-chat-ui) out of the box.
+
+**Public demo**: [deploy/huggingface.md](deploy/huggingface.md) walks through deploying the same image to a free Hugging Face Spaces (Docker SDK) instance, with `EAC_RATE_LIMIT_PER_MIN` to cap public API spend.
+
+---
+
 ## Observability
 
-When `LANGSMITH_API_KEY` and `LANGSMITH_TRACING=true` are set, LangChain/LangGraph automatically push traces to [LangSmith](https://smith.langchain.com). You can inspect every node, tool call, and token cost under the project named by `LANGSMITH_PROJECT`.
+**LLM/agent traces**: when `LANGSMITH_API_KEY` and `LANGSMITH_TRACING=true` are set, LangChain/LangGraph auto-instrument every node, tool call, and token cost under the project named by `LANGSMITH_PROJECT`. With `EAC_DEBUG=1` the API also returns the LangSmith `run_id` in the SSE `done` event.
+
+**Service layer**: the API emits structured JSON access logs with a per-request id, exposes Prometheus metrics at `/metrics` (latency histograms, request/error counts), and increments an `eac_guardrail_blocks_total` counter labeled by which guardrail fired (`input-validation`, `prompt-injection`, `readonly-sql`, `out-of-scope`). That counter is the production-side mirror of the offline red-team suite. The boundary is deliberate: LangSmith owns the LLM traces, the service owns logs and metrics; no OTel collector or Grafana stack for a single-container demo.
 
 ---
 

@@ -13,3 +13,7 @@ python-dotenv==1.2.2
 tenacity==9.1.4
 transformers==5.8.0
 torch==2.11.0
+fastapi==0.139.0
+uvicorn[standard]==0.46.0
+sse-starlette==3.4.5
+prometheus-fastapi-instrumentator==8.0.2

@@ -16,7 +16,7 @@
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("help", "setup", "run", "test", "test-integration", "eval", "redteam", "lint", "format", "clean")]
+    [ValidateSet("help", "setup", "run", "serve", "test", "test-integration", "eval", "redteam", "lint", "format", "clean")]
     [string]$Task = "help"
 )
 
@@ -36,6 +36,7 @@ switch ($Task) {
 Targets:
   setup             Validate env, generate mock data, build vector DB
   run               Start the interactive copilot
+  serve             Start the FastAPI server (SSE chat API on :8000)
   test              Run unit tests (no API key needed)
   test-integration  Run integration tests (requires OPENAI_API_KEY)
   eval              Run LangSmith evaluations
@@ -47,6 +48,7 @@ Targets:
     }
     "setup"            { & $Python -m scripts.setup }
     "run"              { & $Python main.py }
+    "serve"            { & $Python -m uvicorn src.api.app:app --host 127.0.0.1 --port 8000 }
     "test"             { & $Python -m pytest tests/ -v -m "not integration and not langsmith_eval" }
     "test-integration" { & $Python -m pytest tests/ -v -m "integration" }
     "eval"             { & $Python -m pytest tests/eval/ -v -m langsmith_eval }
