@@ -102,7 +102,7 @@ def copilot_target(inputs: dict) -> dict:
     result = graph.invoke({"messages": [HumanMessage(content=inputs["question"])]})
     return {
         "output": result["messages"][-1].content,
-        # Doc-ID stems the agent actually retrieved — lets retrieval_recall/precision
+        # Doc-ID stems the agent actually retrieved, letting retrieval_recall/precision
         # separate retrieval failures from generation failures.
         "retrieved_sources": extract_retrieved_sources(result["messages"]),
     }

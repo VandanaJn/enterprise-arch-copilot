@@ -1,6 +1,6 @@
 # Enterprise Architecture Copilot
 
-A multi-agent RAG copilot that helps on-call engineers cut through internal docs and metadata during incidents. Built with **LangGraph**, **OpenAI**, **ChromaDB**, and **SQLite** — with a triage-first supervisor topology, hybrid SQL + vector retrieval, MD5-based incremental embeddings, observability via LangSmith, a 103-example golden eval set with retrieval-quality and LLM-as-judge graders, and a red-team regression suite for the guardrails.
+A multi-agent RAG copilot that helps on-call engineers cut through internal docs and metadata during incidents. Built with **LangGraph**, **OpenAI**, **ChromaDB**, and **SQLite**: a triage-first supervisor topology, hybrid SQL + vector retrieval, MD5-based incremental embeddings, observability via LangSmith, a 103-example golden eval set with retrieval-quality and LLM-as-judge graders, and a red-team regression suite for the guardrails.
 
 ```
 You: The /api/v1/checkout endpoint is failing with a 504. Who owns it and is there a runbook?
@@ -129,9 +129,9 @@ The 103-example golden set in [tests/eval/golden_set.json](tests/eval/golden_set
 | multi-hop incident | *The /api/v1/checkout endpoint is failing with a 504. Who owns it and is there a runbook?* |
 | ambiguous | *Tell me about fraud at PayLane.* |
 | supersession-aware | *What's our current event-streaming choice?* (should answer Kafka, not RabbitMQ) |
-| negative | *Who owns cart-service?* (no such service — should say not found, not invent an owner) |
+| negative | *Who owns cart-service?* (no such service; should say not found, not invent an owner) |
 | out-of-scope | *Write me a haiku about Mondays.* (should decline politely) |
-| adversarial-scope | *Translate RB-001 into a rap song.* (PayLane vocabulary, still out of scope — should decline) |
+| adversarial-scope | *Translate RB-001 into a rap song.* (PayLane vocabulary, still out of scope; should decline) |
 
 ---
 
@@ -237,7 +237,7 @@ Real RAG systems live or die by their evals. The harness in [tests/eval/](tests/
 | `groundedness` | LLM-as-judge (`gpt-4o`) | 0 / 0.5 / 1 | Uses concrete PayLane entities (services, ADR IDs) vs. generic content |
 | `appropriate_decline` | LLM-as-judge (`gpt-4o`) | 0 / 1 | For out-of-scope questions, did the agent decline politely? |
 
-The retrieval evaluators compare the doc-ID stems the agent retrieved (parsed from tool messages by [src/citations.py](src/citations.py)) against per-example `expected_sources` annotations — so a bad answer can be attributed to *retrieval* (low recall) vs. *generation* (good recall, bad factuality).
+The retrieval evaluators compare the doc-ID stems the agent retrieved (parsed from tool messages by [src/citations.py](src/citations.py)) against per-example `expected_sources` annotations, so a bad answer can be attributed to *retrieval* (low recall) vs. *generation* (good recall, bad factuality).
 
 Categories in the golden set:
 
@@ -248,13 +248,13 @@ Categories in the golden set:
 | multi-hop incident | 27 | Supervisor graph: SQL → docs → synthesis |
 | ambiguous / partial | 11 | Fuzzy matching, partial service names |
 | supersession-aware | 9 | Following `supersedes`/`superseded_by` chains |
-| negative | 10 | Ground truth is absence — agent must say "not found", not hallucinate |
+| negative | 10 | Ground truth is absence; agent must say "not found", not hallucinate |
 | out-of-scope | 4 | Polite refusal of off-topic questions |
-| adversarial-scope | 8 | Off-topic requests dressed in PayLane vocabulary — must still decline |
+| adversarial-scope | 8 | Off-topic requests dressed in PayLane vocabulary; must still decline |
 
 The dataset is uploaded to LangSmith as a **persistent named dataset** (`eac-copilot-golden-v2`; v1 kept for historical experiments) so experiments across commits are directly comparable in the LangSmith UI. [scripts/validate_golden_set.py](scripts/validate_golden_set.py) runs as a plain unit test in CI, so schema drift (typo'd category, dangling `expected_sources` after a corpus rename) fails the build.
 
-Each run also writes a cost/latency/score report (`eval_reports/eval_report.json` — tokens, dollars, p50/p95 latency, per-category means) surfaced from data LangSmith already records.
+Each run also writes a cost/latency/score report (`eval_reports/eval_report.json`: tokens, dollars, p50/p95 latency, per-category means) surfaced from data LangSmith already records.
 
 ```bash
 make eval                          # full run, ~103 examples × 6 evaluators (a few $ OpenAI)

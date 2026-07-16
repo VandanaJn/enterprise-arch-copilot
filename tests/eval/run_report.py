@@ -1,11 +1,15 @@
 """Cost / latency / score summary for a LangSmith eval run.
 
-LangSmith already records tokens, cost, and timing on every root run — this module
+LangSmith already records tokens, cost, and timing on every root run; this module
 only surfaces them: it aggregates the rows returned by `langsmith.evaluate()` into
 one dict, prints it as a table, and writes a machine-readable JSON artifact
 (default: eval_reports/eval_report.json, overridable via EAC_EVAL_REPORT_PATH).
 Cross-commit comparison happens by diffing artifacts or in the LangSmith
-experiments UI — no homegrown dashboard.
+experiments UI, not a homegrown dashboard.
+
+Note: token/cost totals reflect what the SDK returned at collection time; LangSmith
+rolls up usage from child LLM runs asynchronously, so they can read 0 locally right
+after a run. The LangSmith experiments UI is authoritative for cost.
 """
 
 from __future__ import annotations

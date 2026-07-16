@@ -1,6 +1,6 @@
 """Unit tests for src/citations.py and the deterministic retrieval evaluators.
 
-Pure tests — no API keys, no vector store. ToolMessages are fabricated to match
+Pure tests: no API keys, no vector store. ToolMessages are fabricated to match
 the format search_engineering_docs emits (both sides use format_doc_result, so
 these tests also guard the format/parser contract).
 """

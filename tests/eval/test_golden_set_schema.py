@@ -1,4 +1,4 @@
-"""Schema/consistency checks for the golden set — plain unit tests, no API keys.
+"""Schema/consistency checks for the golden set: plain unit tests, no API keys.
 
 Runs in normal CI so golden-set drift (typo'd category, dangling expected_sources
 after a corpus rename, duplicate id) fails the build instead of surfacing mid-eval.

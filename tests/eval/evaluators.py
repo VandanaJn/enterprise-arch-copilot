@@ -74,8 +74,8 @@ def retrieval_recall(
 ) -> dict:
     """Fraction of expected source docs the agent actually retrieved.
 
-    Score is None (skipped) when the example carries no expected_sources annotation
-    — e.g. SQL-only factual lookups where doc retrieval isn't part of ground truth.
+    Score is None (skipped) when the example carries no expected_sources annotation,
+    e.g. SQL-only factual lookups where doc retrieval isn't part of ground truth.
     """
     expected, retrieved = _retrieval_sets(reference_outputs, outputs)
     row: dict = {"key": "retrieval_recall"}
