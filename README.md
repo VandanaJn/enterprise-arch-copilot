@@ -328,7 +328,7 @@ docker compose run --rm setup   # generate data/ (no host Python needed)
 docker compose up               # serve on http://localhost:8000
 ```
 
-**LangGraph Platform**: [langgraph.json](langgraph.json) exposes the graph factory, so `langgraph dev` (free Developer tier, self-hosted) runs it with LangGraph Studio and the [Agent Chat UI](https://github.com/langchain-ai/agent-chat-ui) out of the box.
+**LangGraph Platform**: [langgraph.json](langgraph.json) exposes the graph factory, so `langgraph dev` (free Developer tier, self-hosted) runs it with LangGraph Studio and the [Agent Chat UI](https://github.com/langchain-ai/agent-chat-ui) out of the box. Install the CLI in a separate venv (`pip install "langgraph-cli[inmem]"`); it pins an older `sse-starlette` than the API uses, so it is deliberately not in `requirements-dev.txt`.
 
 **Public demo**: [deploy/huggingface.md](deploy/huggingface.md) walks through deploying the same image to a free Hugging Face Spaces (Docker SDK) instance, with `EAC_RATE_LIMIT_PER_MIN` to cap public API spend.
 

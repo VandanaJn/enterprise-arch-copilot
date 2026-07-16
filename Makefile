@@ -26,6 +26,8 @@ run:
 serve:
 	$(PYTHON) -m uvicorn src.api.app:app --host 127.0.0.1 --port 8000
 
+# Requires langgraph-cli in a separate venv (conflicts with the API's sse-starlette pin):
+#   pip install "langgraph-cli[inmem]"
 dev-graph:
 	langgraph dev
 

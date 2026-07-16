@@ -5,4 +5,7 @@ ruff==0.15.21
 mypy==2.3.0
 pre-commit==4.6.0
 httpx==0.28.1
-langgraph-cli[inmem]==0.4.7
+# Note: langgraph-cli[inmem] (for `make dev-graph`) is intentionally NOT listed here.
+# Its langgraph-runtime-inmem dependency pins an older sse-starlette that conflicts
+# with the version this API needs, so install it in a separate venv when you want
+# `langgraph dev`:  pip install "langgraph-cli[inmem]"
