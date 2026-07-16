@@ -10,6 +10,7 @@ help:
 	@echo "  test              Run unit tests (no API key needed)"
 	@echo "  test-integration  Run integration tests (requires OPENAI_API_KEY)"
 	@echo "  eval              Run LangSmith evaluations"
+	@echo "  redteam           Run the guardrail red-team suite (add -m integration for classifier rows)"
 	@echo "  lint              Run ruff checks (lint + format check)"
 	@echo "  format            Auto-fix lint issues and reformat"
 	@echo "  clean             Remove generated docs/, engineering_data.db, chroma_db/"
@@ -21,13 +22,16 @@ run:
 	$(PYTHON) main.py
 
 test:
-	$(PYTHON) -m pytest tests/ -v -m "not integration and not langsmith_eval" --ignore=tests/eval
+	$(PYTHON) -m pytest tests/ -v -m "not integration and not langsmith_eval"
 
 test-integration:
-	$(PYTHON) -m pytest tests/ -v -m "integration" --ignore=tests/eval
+	$(PYTHON) -m pytest tests/ -v -m "integration"
 
 eval:
 	$(PYTHON) -m pytest tests/eval/ -v -m langsmith_eval
+
+redteam:
+	$(PYTHON) -m pytest tests/test_redteam_guardrails.py -v -s
 
 lint:
 	$(PYTHON) -m ruff check .

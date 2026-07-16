@@ -19,6 +19,7 @@ from sqlalchemy import text as sql_text
 from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 
 from src import config
+from src.citations import format_doc_result
 from src.incident_workflow import (
     TriageResult,
     extract_final_assistant_text,
@@ -164,9 +165,7 @@ def search_engineering_docs(query: str) -> str:
     for i, doc in enumerate(docs):
         doc_type = doc.metadata.get("document_type", "unknown")
         source = doc.metadata.get("source", "unknown")
-        formatted_results.append(
-            f"--- Document {i + 1} (Type: {doc_type}, Source: {source}) ---\n{doc.page_content}"
-        )
+        formatted_results.append(format_doc_result(i + 1, doc_type, source, doc.page_content))
 
     return "\n\n".join(formatted_results)
 

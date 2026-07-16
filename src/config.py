@@ -64,3 +64,9 @@ def prompt_injection_model() -> str:
     return os.environ.get(
         "EAC_PROMPT_INJECTION_MODEL", "protectai/deberta-v3-base-prompt-injection-v2"
     )
+
+
+def eval_report_path() -> str:
+    return os.environ.get(
+        "EAC_EVAL_REPORT_PATH", os.path.join(ROOT_DIR, "eval_reports", "eval_report.json")
+    )

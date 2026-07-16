@@ -16,7 +16,7 @@
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("help", "setup", "run", "test", "test-integration", "eval", "lint", "format", "clean")]
+    [ValidateSet("help", "setup", "run", "test", "test-integration", "eval", "redteam", "lint", "format", "clean")]
     [string]$Task = "help"
 )
 
@@ -39,6 +39,7 @@ Targets:
   test              Run unit tests (no API key needed)
   test-integration  Run integration tests (requires OPENAI_API_KEY)
   eval              Run LangSmith evaluations
+  redteam           Run the guardrail red-team suite
   lint              Run ruff checks (lint + format check)
   format            Auto-fix lint issues and reformat
   clean             Remove generated docs/, engineering_data.db, chroma_db/
@@ -46,9 +47,10 @@ Targets:
     }
     "setup"            { & $Python -m scripts.setup }
     "run"              { & $Python main.py }
-    "test"             { & $Python -m pytest tests/ -v -m "not integration and not langsmith_eval" --ignore=tests/eval }
-    "test-integration" { & $Python -m pytest tests/ -v -m "integration" --ignore=tests/eval }
+    "test"             { & $Python -m pytest tests/ -v -m "not integration and not langsmith_eval" }
+    "test-integration" { & $Python -m pytest tests/ -v -m "integration" }
     "eval"             { & $Python -m pytest tests/eval/ -v -m langsmith_eval }
+    "redteam"          { & $Python -m pytest tests/test_redteam_guardrails.py -v -s }
     "lint"             { & $Python -m ruff check .; if ($?) { & $Python -m ruff format --check . } }
     "format"           { & $Python -m ruff check . --fix; & $Python -m ruff format . }
     "clean" {

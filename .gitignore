@@ -207,6 +207,9 @@ engineering_data.db
 docs/
 chroma_db/
 
+# Eval run artifacts (uploaded from CI, not committed)
+eval_reports/
+
 # Claude Code memory
 .claude/
 _debug_agent.py
