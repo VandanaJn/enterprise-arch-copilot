@@ -14,13 +14,13 @@ instantiated lazily and reused via `_get_judge()`.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any, Literal, Optional
+from typing import Literal
 
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
-
 # --- Shared judge LLM ---------------------------------------------------------
+
 
 @lru_cache(maxsize=1)
 def _get_judge() -> ChatOpenAI:
@@ -29,8 +29,9 @@ def _get_judge() -> ChatOpenAI:
 
 # --- Deterministic: keyword_coverage -----------------------------------------
 
+
 def keyword_coverage(
-    inputs: dict, reference_outputs: Optional[dict] = None, outputs: Optional[dict] = None
+    inputs: dict, reference_outputs: dict | None = None, outputs: dict | None = None
 ) -> dict:
     """Fraction of expected keywords (case-insensitive) present in the output.
 
@@ -55,6 +56,7 @@ def keyword_coverage(
 
 
 # --- Pydantic schemas for LLM-as-judge ---------------------------------------
+
 
 class _Verdict(BaseModel):
     score: Literal[0, 1] = Field(..., description="0 = bad, 1 = good")
@@ -97,7 +99,7 @@ Return your verdict via the structured schema."""
 
 
 def factuality(
-    inputs: dict, reference_outputs: Optional[dict] = None, outputs: Optional[dict] = None
+    inputs: dict, reference_outputs: dict | None = None, outputs: dict | None = None
 ) -> dict:
     question = (inputs or {}).get("question", "")
     reference_facts = (reference_outputs or {}).get("reference_facts", "")
@@ -138,7 +140,7 @@ Return your verdict via the structured schema."""
 
 
 def groundedness(
-    inputs: dict, reference_outputs: Optional[dict] = None, outputs: Optional[dict] = None
+    inputs: dict, reference_outputs: dict | None = None, outputs: dict | None = None
 ) -> dict:
     question = (inputs or {}).get("question", "")
     answer = (outputs or {}).get("output", "")
@@ -177,7 +179,7 @@ Return your verdict via the structured schema."""
 
 
 def appropriate_decline(
-    inputs: dict, reference_outputs: Optional[dict] = None, outputs: Optional[dict] = None
+    inputs: dict, reference_outputs: dict | None = None, outputs: dict | None = None
 ) -> dict:
     question = (inputs or {}).get("question", "")
     answer = (outputs or {}).get("output", "")

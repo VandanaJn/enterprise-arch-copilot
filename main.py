@@ -1,13 +1,16 @@
 import asyncio
 import logging
 import uuid
+
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
+
 from src import config
-from src.agent import create_enterprise_copilot, close_connections
+from src.agent import close_connections, create_enterprise_copilot
 
 # Load environment variables (OPENAI_API_KEY)
 load_dotenv()
+
 
 async def chat_loop():
     print("\n--- Enterprise Architecture Copilot ---")
@@ -34,9 +37,9 @@ async def chat_loop():
                 "configurable": {"thread_id": thread_id},
                 "recursion_limit": config.recursion_limit(),
             }
-            
+
             print("\nCopilot: ", end="", flush=True)
-            
+
             # Single run: stream to show tool calls, then use last state for final answer (one LangSmith trace per query)
             printed_msgs = set()
             last_messages = []
@@ -49,19 +52,24 @@ async def chat_loop():
                                 for tc in msg.tool_calls:
                                     print(f"\n[Tool Call] {tc['name']}({tc['args']})")
                             elif msg.type == "tool":
-                                print(f"[Tool Response] {msg.content[:200]}..." if len(msg.content) > 200 else f"[Tool Response] {msg.content}")
+                                print(
+                                    f"[Tool Response] {msg.content[:200]}..."
+                                    if len(msg.content) > 200
+                                    else f"[Tool Response] {msg.content}"
+                                )
                             elif msg.type == "ai" and not msg.tool_calls:
                                 pass
                             printed_msgs.add(msg.id)
-            
+
             final_content = last_messages[-1].content if last_messages else "(no response)"
             print(f"\nFinal Answer: {final_content}")
             print("-" * 20)
-            
+
         except KeyboardInterrupt:
             break
         except Exception as e:
             print(f"\nError: {e}")
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -71,7 +79,6 @@ if __name__ == "__main__":
         print("\nExiting gracefully...")
     finally:
         try:
-            from src.agent import close_connections
             close_connections()
         except Exception as e:
             logging.exception("Error closing database connections during shutdown: %s", e)

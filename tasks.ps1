@@ -16,7 +16,7 @@
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("help", "setup", "run", "test", "test-integration", "eval", "clean")]
+    [ValidateSet("help", "setup", "run", "test", "test-integration", "eval", "lint", "format", "clean")]
     [string]$Task = "help"
 )
 
@@ -39,6 +39,8 @@ Targets:
   test              Run unit tests (no API key needed)
   test-integration  Run integration tests (requires OPENAI_API_KEY)
   eval              Run LangSmith evaluations
+  lint              Run ruff checks (lint + format check)
+  format            Auto-fix lint issues and reformat
   clean             Remove generated docs/, engineering_data.db, chroma_db/
 "@
     }
@@ -47,6 +49,8 @@ Targets:
     "test"             { & $Python -m pytest tests/ -v -m "not integration and not langsmith_eval" --ignore=tests/eval }
     "test-integration" { & $Python -m pytest tests/ -v -m "integration" --ignore=tests/eval }
     "eval"             { & $Python -m pytest tests/eval/ -v -m langsmith_eval }
+    "lint"             { & $Python -m ruff check .; if ($?) { & $Python -m ruff format --check . } }
+    "format"           { & $Python -m ruff check . --fix; & $Python -m ruff format . }
     "clean" {
         foreach ($p in @("docs", "chroma_db", "engineering_data.db", "tests/test_data")) {
             if (Test-Path $p) {

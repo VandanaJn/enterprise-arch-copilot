@@ -10,8 +10,8 @@ import sqlite3
 
 import pytest
 
-from src.agent import close_connections
 from src import config
+from src.agent import close_connections
 from src.config import DOC_SUBDIRS
 from src.generate_mock_data import (
     create_directories,
@@ -72,7 +72,9 @@ def test_generate_structured_data_seeds_all_tables():
         assert incidents >= 10, f"expected >=10 incidents, got {incidents}"
 
         # Spot-check a known service from the spec
-        cursor.execute("SELECT owner_team, criticality_tier FROM service_catalog WHERE name = 'checkout-service'")
+        cursor.execute(
+            "SELECT owner_team, criticality_tier FROM service_catalog WHERE name = 'checkout-service'"
+        )
         row = cursor.fetchone()
         assert row is not None
         assert row[1] == "tier-0"

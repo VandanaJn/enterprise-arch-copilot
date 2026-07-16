@@ -22,7 +22,7 @@ This document tracks the rationale behind key technical choices for the Enterpri
 
 ### LLM Provider (`langchain-openai`)
 *   **Decision:** Use OpenAI (GPT-4o or `gpt-4o-mini`).
-*   **Rationale:** 
+*   **Rationale:**
     *   Provides the most reliable function-calling/tool-calling capabilities required for an agentic router to decide between SQL and Vector tools.
     *   Excellent native support for `response_format={ "type": "json_object" }` and structured output parsing, which guarantees the agent returns data arrays and thought processes in a machine-readable format that LangGraph can easily route.
 
@@ -30,7 +30,7 @@ This document tracks the rationale behind key technical choices for the Enterpri
 
 ### True Semantic Chunking (`SemanticChunker`)
 *   **Decision:** We are using LangChain's `SemanticChunker` (from `langchain-experimental`).
-*   **Rationale:** `RecursiveCharacterTextSplitter` is *structural* chunking, not *semantic* chunking. 
+*   **Rationale:** `RecursiveCharacterTextSplitter` is *structural* chunking, not *semantic* chunking.
     *   **True Semantic Chunking** embeds every sentence and calculates the cosine distance between them. It groups sentences together into a chunk until the semantic meaning drastically shifts (a "breakpoint"), at which point it starts a new chunk.
     *   **Chunk Size:** Unlike structural splitter, there is **no fixed chunk size** (like 1000 characters). The chunk size is completely variable and is determined dynamically by the meaning of the text. If an architectural explanation is 3 sentences, the chunk is 3 sentences. If the explanation takes 15 sentences before moving to a new topic, the chunk is 15 sentences. You control the length indirectly by adjusting the breakpoint threshold (e.g., `breakpoint_threshold_type="percentile"`).
     *   **Fallback Limit:** We still combine this with a structural splitter as a fallback to enforce a hard maximum limit (e.g., 2000 characters) to protect LLM context windows in cases where a topic never shifts.
@@ -39,7 +39,7 @@ This document tracks the rationale behind key technical choices for the Enterpri
 ### Embedding Model (`OpenAIEmbeddings`)
 *   **Decision:** We are using LangChain's default OpenAI embedding configuration, which resolves to high-dimensionality models (like `text-embedding-ada-002` or `text-embedding-3-small`).
 *   **Rationale & Dimensionality Trade-offs:**
-    *   **High Dimensionality (1536 dimensions):** OpenAI models generate 1536-dimensional vectors. This massive semantic space allows the model to capture highly complex, nuanced engineering concepts (e.g., the architectural differences between Kafka vs. RabbitMQ). 
+    *   **High Dimensionality (1536 dimensions):** OpenAI models generate 1536-dimensional vectors. This massive semantic space allows the model to capture highly complex, nuanced engineering concepts (e.g., the architectural differences between Kafka vs. RabbitMQ).
     *   **Compared to Low Dimensionality (e.g., 384 dimensions):** Smaller, local open-source models (like `all-MiniLM-L6-v2`) are much faster and cheaper to run, but they often collapse complex comparative topics into generic buckets (e.g., just "messaging systems"), reducing RAG accuracy for Staff-level architecture queries.
     *   **The Trade-off (Cost vs. Accuracy):** 1536-dimensional vectors take 4x the RAM and storage in a vector database compared to 384-dimensional vectors, and computing cosine distance at query time is mathematically heavier. For enterprise scale (millions of docs), this strictly increases cloud vector DB hosting costs.
     *   **Why Hosted OpenAI over Local Open-Source (e.g., BAAI/bge-large)?** While models like `bge-large` (1024 dimensions) often beat OpenAI on retrieval benchmarks and offer data privacy, hosting them locally requires PyTorch dependency management and hardware acceleration (GPUs). A reliable, hosted API eliminates that infrastructure complexity for this use case.
@@ -57,7 +57,7 @@ This document tracks the rationale behind key technical choices for the Enterpri
 ### Single-Agent Router vs. Multi-Agent Systems
 *   **Status:** Superseded by *Hybrid Triage-Routed Topology* below.
 *   **Decision:** Use a single-agent router architecture instead of a multi-agent "supervisor" pattern.
-*   **Rationale:** 
+*   **Rationale:**
     *   **Efficiency:** A single-agent router is more token-efficient and reduces latency by avoiding inter-agent communication overhead.
     *   **Iterative Reasoning:** The current router can already perform sequential tool calls (e.g., query SQL then Search Vector DB) within a single execution loop.
     *   **Complexity Management:** Multi-agent systems add significant orchestration complexity (managing handoffs, state merging, and specialized prompts). For the current scope of RAG and SQL retrieval, a single well-prompted agent is more robust and easier to maintain.
@@ -78,8 +78,14 @@ This document tracks the rationale behind key technical choices for the Enterpri
     *   **Tradeoffs accepted:** Incident responses now make 3 LLM calls (structured + runbook + synthesize) plus triage, versus the original single ReAct loop. Latency and token cost both rise on the incident path, justified by the determinism and grounding gains above. State carries `structured_findings` and `runbook_findings` between nodes (see `AgentState` `TypedDict`), which is more graph state than the original router but is still small and serialisable.
 
 ### Retries and Backoff (OpenAI / Chroma)
+*   **Status:** Superseded by *Bounded Retries via tenacity* below.
 *   **Decision:** No retries or circuit breaker in the current demo; failures surface immediately to the user.
 *   **Rationale:** Keeps the codebase simple for portfolio and local use. For production we would add: (1) **Retries with backoff** (e.g. `tenacity` or LangChain’s built-in retry) on transient OpenAI/network errors, with exponential backoff and a max attempt count; (2) **Circuit breaker** (e.g. `pybreaker` or a small state machine) around external calls so repeated failures stop hammering the API and allow partial degradation (e.g. SQL-only mode if Chroma is down). We would also consider timeouts and idempotency for write paths (e.g. vector upserts).
+
+### Bounded Retries via tenacity (supersedes No-Retries stance)
+*   **Decision:** Wrap direct LLM invocations (triage classification and incident-brief synthesis) in `_invoke_with_retry` (`src/agent.py`): `tenacity` retry with `stop_after_attempt(3)` and exponential backoff (1–8s), `reraise=True`, and `retry_if_not_exception_type((KeyboardInterrupt, SystemExit))` so user interrupts are never swallowed.
+*   **Rationale:** Transient OpenAI errors (rate limits, connection resets) were the dominant failure mode in practice, and a bounded retry recovers most of them at negligible cost. Three attempts with capped backoff keeps worst-case added latency small and predictable. Failures after the final attempt still surface immediately, and `triage_node` additionally degrades to `mode="general"` on unrecoverable triage errors rather than declining the request.
+*   **Still out of scope (deliberately):** a circuit breaker around external calls and retry coverage inside the prebuilt ReAct sub-agents (their tool-loop calls go through LangChain directly). Both remain documented production follow-ups; the demo favors simplicity over full resilience machinery.
 
 ### Observability (LangSmith)
 *   **Decision:** Use LangSmith for tracing when configured via environment variables (`LANGSMITH_API_KEY`, `LANGSMITH_TRACING`, `LANGSMITH_PROJECT`). No application code changes are required; LangChain/LangGraph auto-instrument when these are set.

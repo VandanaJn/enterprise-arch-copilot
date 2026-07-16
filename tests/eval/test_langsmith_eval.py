@@ -25,14 +25,12 @@ import pytest
 from langchain_core.messages import HumanMessage
 from langsmith import Client, evaluate, traceable
 
+from src import config
+
 # .env is loaded in tests/conftest.py before this module is imported.
 from src.agent import create_enterprise_copilot
-from src import config
 from tests.eval.evaluators import (
     ALL_EVALUATORS,
-    appropriate_decline,
-    factuality,
-    groundedness,
     keyword_coverage,
 )
 
@@ -41,6 +39,7 @@ DATASET_NAME = "eac-copilot-golden-v1"
 
 
 # --- Skip-if-prereqs-missing --------------------------------------------------
+
 
 def _valid_openai_key() -> bool:
     k = os.getenv("OPENAI_API_KEY")
@@ -79,6 +78,7 @@ pytestmark = [
 
 # --- Target function ----------------------------------------------------------
 
+
 @traceable(name="eac_copilot_eval_target", run_type="chain")
 def copilot_target(inputs: dict) -> dict:
     graph = create_enterprise_copilot()
@@ -87,6 +87,7 @@ def copilot_target(inputs: dict) -> dict:
 
 
 # --- Dataset management -------------------------------------------------------
+
 
 def _load_golden_set() -> list[dict]:
     raw = json.loads(GOLDEN_SET_PATH.read_text(encoding="utf-8"))
@@ -149,6 +150,7 @@ def persistent_dataset() -> str:
 
 # --- The actual eval test -----------------------------------------------------
 
+
 def test_langsmith_evaluate_copilot(persistent_dataset: str):
     """Run all evaluators against the golden set; fail if scores fall below thresholds."""
     is_quick = os.getenv("EAC_EVAL_QUICK") == "1"
@@ -188,10 +190,16 @@ def test_langsmith_evaluate_copilot(persistent_dataset: str):
     # over time as the agent improves. EAC_EVAL_MIN_SCORE overrides per-key floor.
     floor = float(os.getenv("EAC_EVAL_MIN_SCORE", "0.5"))
     if not is_quick:
-        kw = sum(per_eval.get("keyword_coverage", [])) / max(len(per_eval.get("keyword_coverage", [])) or 1, 1)
-        gr = sum(per_eval.get("groundedness", [])) / max(len(per_eval.get("groundedness", [])) or 1, 1)
+        kw = sum(per_eval.get("keyword_coverage", [])) / max(
+            len(per_eval.get("keyword_coverage", [])) or 1, 1
+        )
+        gr = sum(per_eval.get("groundedness", [])) / max(
+            len(per_eval.get("groundedness", [])) or 1, 1
+        )
         fa = sum(per_eval.get("factuality", [])) / max(len(per_eval.get("factuality", [])) or 1, 1)
-        de = sum(per_eval.get("appropriate_decline", [])) / max(len(per_eval.get("appropriate_decline", [])) or 1, 1)
+        de = sum(per_eval.get("appropriate_decline", [])) / max(
+            len(per_eval.get("appropriate_decline", [])) or 1, 1
+        )
         assert kw >= floor, f"keyword_coverage mean {kw:.2f} below floor {floor}"
         assert gr >= floor, f"groundedness mean {gr:.2f} below floor {floor}"
         assert fa >= floor, f"factuality mean {fa:.2f} below floor {floor}"
