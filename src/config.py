@@ -70,3 +70,18 @@ def eval_report_path() -> str:
     return os.environ.get(
         "EAC_EVAL_REPORT_PATH", os.path.join(ROOT_DIR, "eval_reports", "eval_report.json")
     )
+
+
+def debug_mode() -> bool:
+    """When true, the API includes the LangSmith run id in SSE done events."""
+    return os.environ.get("EAC_DEBUG", "0") == "1"
+
+
+def rate_limit_per_minute() -> int:
+    """Max POST /chat requests per client IP per minute; 0 disables the limiter."""
+    return int(os.environ.get("EAC_RATE_LIMIT_PER_MIN", "0"))
+
+
+def warm_injection_detector() -> bool:
+    """When true, the API loads the injection classifier at startup (first-request latency)."""
+    return os.environ.get("EAC_WARM_INJECTION_DETECTOR", "1") == "1"

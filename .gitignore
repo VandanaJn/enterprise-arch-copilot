@@ -210,6 +210,9 @@ chroma_db/
 # Eval run artifacts (uploaded from CI, not committed)
 eval_reports/
 
+# docker-compose generated data mount
+data/
+
 # Claude Code memory
 .claude/
 _debug_agent.py

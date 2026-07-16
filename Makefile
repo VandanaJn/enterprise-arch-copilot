@@ -1,12 +1,14 @@
 # Auto-detect venv Python (Windows Scripts\ or Unix bin/); fall back to PATH python.
 PYTHON := $(or $(wildcard venv/Scripts/python.exe),$(wildcard venv/bin/python),python)
 
-.PHONY: help setup run test test-integration eval lint format clean
+.PHONY: help setup run serve test test-integration eval redteam lint format clean
 
 help:
 	@echo "Targets:"
 	@echo "  setup             Validate env, generate mock data, build vector DB"
 	@echo "  run               Start the interactive copilot"
+	@echo "  serve             Start the FastAPI server (SSE chat API on :8000)"
+	@echo "  dev-graph         Run the graph on LangGraph Platform dev server (langgraph dev)"
 	@echo "  test              Run unit tests (no API key needed)"
 	@echo "  test-integration  Run integration tests (requires OPENAI_API_KEY)"
 	@echo "  eval              Run LangSmith evaluations"
@@ -20,6 +22,14 @@ setup:
 
 run:
 	$(PYTHON) main.py
+
+serve:
+	$(PYTHON) -m uvicorn src.api.app:app --host 127.0.0.1 --port 8000
+
+# Requires langgraph-cli in a separate venv (conflicts with the API's sse-starlette pin):
+#   pip install "langgraph-cli[inmem]"
+dev-graph:
+	langgraph dev
 
 test:
 	$(PYTHON) -m pytest tests/ -v -m "not integration and not langsmith_eval"
