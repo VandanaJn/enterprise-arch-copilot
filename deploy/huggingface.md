@@ -30,6 +30,10 @@ Actions → **Deploy to Hugging Face Space** → **Run workflow**. The workflow:
    embedding tokens.
 2. Creates the private Space if needed and sets its runtime secret (`OPENAI_API_KEY`)
    and variables (`PORT=7860`, `EAC_RATE_LIMIT_PER_MIN=10`, `EAC_WARM_INJECTION_DETECTOR=1`).
+   If `LANGSMITH_API_KEY` is set, it also sets `LANGSMITH_TRACING=true`,
+   `LANGSMITH_PROJECT` (default `enterprise-arch-copilot`), and `LANGSMITH_ENDPOINT`
+   (default the hosted US endpoint). Override the last two by adding GitHub repo
+   **variables** of the same name; you never add them as secrets (they are not credentials).
 3. Uploads the app plus the baked corpus. Two files are swapped in for the Space:
    `README.md` gets HF frontmatter (`sdk: docker`, `app_port: 7860`), and
    `.dockerignore` is relaxed so the corpus lands in the build context (Spaces have

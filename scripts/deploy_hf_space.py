@@ -10,7 +10,9 @@ Run by .github/workflows/deploy-hf.yml (manual trigger). Uses huggingface_hub
      into the image (HF Spaces have no volume mount).
 
 Required env: HF_TOKEN, HF_SPACE_ID (e.g. "user/space"), OPENAI_API_KEY.
-Optional env: EAC_RATE_LIMIT_PER_MIN (default 10), LANGSMITH_API_KEY.
+Optional env: EAC_RATE_LIMIT_PER_MIN (default 10), LANGSMITH_API_KEY. When the
+LangSmith key is set, LANGSMITH_PROJECT and LANGSMITH_ENDPOINT are also propagated
+to the Space (defaulting to "enterprise-arch-copilot" and the hosted US endpoint).
 """
 
 from __future__ import annotations
@@ -122,8 +124,21 @@ def main() -> None:
     api.add_space_variable(space_id, "EAC_WARM_INJECTION_DETECTOR", "1")
     api.add_space_secret(space_id, "OPENAI_API_KEY", openai_key)
     if langsmith_key := os.environ.get("LANGSMITH_API_KEY", "").strip():
+        # Non-secret tracing config: set as Space variables so traces land in the
+        # right project/region. Defaults match the standard hosted LangSmith; a
+        # GitHub repo variable of the same name overrides.
         api.add_space_secret(space_id, "LANGSMITH_API_KEY", langsmith_key)
         api.add_space_variable(space_id, "LANGSMITH_TRACING", "true")
+        api.add_space_variable(
+            space_id,
+            "LANGSMITH_PROJECT",
+            os.environ.get("LANGSMITH_PROJECT") or "enterprise-arch-copilot",
+        )
+        api.add_space_variable(
+            space_id,
+            "LANGSMITH_ENDPOINT",
+            os.environ.get("LANGSMITH_ENDPOINT") or "https://api.smith.langchain.com",
+        )
 
     with tempfile.TemporaryDirectory() as tmp:
         staging = build_staging(REPO_ROOT, Path(tmp) / "space", tracked_files(REPO_ROOT))
