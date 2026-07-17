@@ -330,7 +330,7 @@ docker compose up               # serve on http://localhost:8000
 
 **LangGraph Platform**: [langgraph.json](langgraph.json) exposes the graph factory, so `langgraph dev` (free Developer tier, self-hosted) runs it with LangGraph Studio and the [Agent Chat UI](https://github.com/langchain-ai/agent-chat-ui) out of the box. Install the CLI in a separate venv (`pip install "langgraph-cli[inmem]"`); it pins an older `sse-starlette` than the API uses, so it is deliberately not in `requirements-dev.txt`.
 
-**Public demo**: [deploy/huggingface.md](deploy/huggingface.md) walks through deploying the same image to a free Hugging Face Spaces (Docker SDK) instance, with `EAC_RATE_LIMIT_PER_MIN` to cap public API spend.
+**Hosted demo**: a manual GitHub Actions workflow ([`deploy-hf.yml`](.github/workflows/deploy-hf.yml)) deploys the same image to a private Hugging Face Docker Space. It generates the corpus in CI (cached, so unchanged deploys cost nothing), bakes it into the image, and provisions the Space's secret and port variable. See [deploy/huggingface.md](deploy/huggingface.md) for the required secrets/variable and how to flip the Space public. `EAC_RATE_LIMIT_PER_MIN` caps API spend once it is public.
 
 ---
 

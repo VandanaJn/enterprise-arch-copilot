@@ -1,0 +1,20 @@
+# .dockerignore used only for the Hugging Face Space build (swapped in by the deploy
+# workflow). Unlike the repo .dockerignore, it KEEPS the corpus data in the build
+# context so it bakes into the image: HF Spaces have no volume mount.
+.git
+.github
+.claude
+.vscode
+venv
+venv_old
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+eval_reports
+tests/test_data
+pytest_output.txt
+interview_prep.md
+architecture_diagram.excalidraw
+.env

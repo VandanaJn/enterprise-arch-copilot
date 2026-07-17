@@ -1,0 +1,46 @@
+name: Deploy to Hugging Face Space
+
+# Manual only: click "Run workflow" in the Actions tab. Pushes the app + baked
+# corpus to a private HF Docker Space. Requires repo secrets HF_TOKEN and
+# OPENAI_API_KEY, and repo variable HF_SPACE_ID (e.g. "user/enterprise-arch-copilot").
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # Cache the generated corpus so unchanged deploys cost no embedding tokens.
+      - name: Cache corpus
+        id: corpus-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            chroma_db
+            engineering_data.db
+            docs
+          key: corpus-${{ hashFiles('templates/mock_docs/**', 'templates/company_spec.md', 'src/generate_mock_data.py', 'src/build_vector_db.py') }}
+
+      - name: Generate corpus (on cache miss)
+        if: steps.corpus-cache.outputs.cache-hit != 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python -m pip install -r requirements.txt
+          python -m scripts.setup
+
+      - name: Deploy to Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_ID: ${{ vars.HF_SPACE_ID }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+        run: |
+          python -m pip install "huggingface_hub==1.14.0"
+          python -m scripts.deploy_hf_space
