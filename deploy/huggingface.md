@@ -22,6 +22,14 @@ workflow, triggered manually.
      `your-hf-username/enterprise-arch-copilot` (just the username will fail). The
      workflow creates this Space (Docker SDK) if it does not exist.
 
+   > **If the deploy fails with `402 Payment Required` on create:** some HF accounts
+   > cannot create a Space via API (HF wants a payment method on file, or you must
+   > create your first Space through the website). Create it once manually: HF →
+   > New Space → **SDK: Docker** → name it exactly `enterprise-arch-copilot` →
+   > choose visibility → Create. Then re-run the workflow; it detects the existing
+   > Space and just populates it. Public CPU Spaces remain free even with a card on
+   > file; private Spaces require a paid plan.
+
 ## Deploy
 
 Actions → **Deploy to Hugging Face Space** → **Run workflow**. Pick a **visibility**:

@@ -124,28 +124,48 @@ def main() -> None:
     api = HfApi(token=token)
 
     visibility = "private" if private else "public"
-    print(f"[deploy] Ensuring Space exists ({visibility}, docker): {space_id}")
+    if api.repo_exists(repo_id=space_id, repo_type="space"):
+        # Skip create entirely: some HF accounts 402 on the create API even for a
+        # public Space (create-via-API restricted / payment method required), so we
+        # never call it once the Space is there.
+        print(f"[deploy] Space already exists, skipping create: {space_id}")
+    else:
+        print(f"[deploy] Creating Space ({visibility}, docker): {space_id}")
+        try:
+            api.create_repo(
+                repo_id=space_id,
+                repo_type="space",
+                space_sdk="docker",
+                private=private,
+                exist_ok=True,
+            )
+        except HfHubHTTPError as exc:
+            if "402" in str(exc):
+                print(
+                    "[deploy] ERROR: HF returned 402 Payment Required creating the Space. "
+                    "This account cannot create a Space via API right now. Create it once "
+                    "in the HF UI (New Space -> SDK: Docker -> your chosen visibility), "
+                    f"named exactly '{space_id.split('/', 1)[1]}', then re-run this "
+                    "workflow. You may also need to add a payment method in HF billing "
+                    "settings (public CPU Spaces remain free).",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            raise
+
+    # Enforce visibility (also flips an existing Space if the input changed).
     try:
-        api.create_repo(
-            repo_id=space_id,
-            repo_type="space",
-            space_sdk="docker",
-            private=private,
-            exist_ok=True,
-        )
+        api.update_repo_settings(repo_id=space_id, repo_type="space", private=private)
     except HfHubHTTPError as exc:
+        # A private flip on a free account 402s; don't fail the whole deploy for it.
         if "402" in str(exc) and private:
             print(
-                "[deploy] ERROR: creating a PRIVATE Space returned 402 Payment Required. "
-                "Private Spaces need a paid HF plan. Re-run with visibility=public "
-                "(free), or upgrade to HF PRO.",
+                "[deploy] WARNING: could not set the Space private (402). Leaving current "
+                "visibility; private requires a paid HF plan.",
                 file=sys.stderr,
             )
-            sys.exit(1)
-        raise
-
-    # Enforce visibility on an already-existing Space (create_repo won't change it).
-    api.update_repo_settings(repo_id=space_id, repo_type="space", private=private)
+        else:
+            raise
 
     print("[deploy] Setting Space variables and secret")
     api.add_space_variable(space_id, "PORT", "7860")
