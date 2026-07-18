@@ -5,6 +5,12 @@ name: Deploy to Hugging Face Space
 # OPENAI_API_KEY, and repo variable HF_SPACE_ID (e.g. "user/enterprise-arch-copilot").
 on:
   workflow_dispatch:
+    inputs:
+      visibility:
+        description: "Space visibility (private requires a paid HF plan)"
+        type: choice
+        options: [public, private]
+        default: public
 
 jobs:
   deploy:
@@ -39,6 +45,7 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_SPACE_ID: ${{ vars.HF_SPACE_ID }}
+          HF_SPACE_VISIBILITY: ${{ inputs.visibility }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
           # Optional overrides; the script defaults to the hosted US endpoint and

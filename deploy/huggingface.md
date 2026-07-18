@@ -18,12 +18,15 @@ workflow, triggered manually.
    - `LANGSMITH_API_KEY`: optional, enables live tracing on the Space
 
 3. **Add a GitHub repo variable** (same page → Variables):
-   - `HF_SPACE_ID`: e.g. `your-hf-username/enterprise-arch-copilot`. The workflow
-     creates this Space (private, Docker SDK) if it does not exist.
+   - `HF_SPACE_ID`: must be `namespace/space-name`, e.g.
+     `your-hf-username/enterprise-arch-copilot` (just the username will fail). The
+     workflow creates this Space (Docker SDK) if it does not exist.
 
 ## Deploy
 
-Actions → **Deploy to Hugging Face Space** → **Run workflow**. The workflow:
+Actions → **Deploy to Hugging Face Space** → **Run workflow**. Pick a **visibility**:
+`public` (free) or `private` (needs a paid HF plan; a free account returns 402 on a
+private Space). The workflow:
 
 1. Restores or generates the corpus (`chroma_db/`, `engineering_data.db`, `docs/`).
    `actions/cache` keys it on the corpus inputs, so unchanged deploys spend no
@@ -47,8 +50,9 @@ HF then builds the image and starts the container. First build takes a few minut
 - Check it: `curl https://<user>-<space>.hf.space/healthz` returns `{"status":"ok"}`.
   `POST /chat` streams an answer over SSE. The Space is API-only until the web chat UI
   ships (served at `/`).
-- The Space is **private**. To make it public later: HF Space → Settings → Change
-  visibility, or `HfApi(token=...).update_repo_settings(space_id, repo_type="space", private=False)`.
+- Visibility follows the workflow's `visibility` input; re-running with a different
+  value flips it (the deploy calls `update_repo_settings`). You can also change it in
+  HF Space → Settings → Change visibility. Private requires a paid HF plan.
 - Free Spaces sleep after inactivity, so the first request after a quiet period takes
   ~1 minute to wake.
 
