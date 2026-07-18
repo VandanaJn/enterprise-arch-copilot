@@ -2,7 +2,8 @@
 
 Run by .github/workflows/deploy-hf.yml (manual trigger). Uses huggingface_hub
 (deploy-time tooling, not a runtime dependency) to:
-  1. create the Space if it doesn't exist (private, Docker SDK),
+  1. create the Space if it doesn't exist (Docker SDK; public by default, since
+     private Spaces need a paid HF plan; set HF_SPACE_VISIBILITY=private on PRO),
   2. set the Space's runtime secret (OPENAI_API_KEY) and variables (PORT, rate
      limit, warm-up),
   3. upload a staging dir = tracked repo files + generated corpus, with the HF
@@ -101,22 +102,50 @@ def _require_env(name: str) -> str:
 
 def main() -> None:
     from huggingface_hub import HfApi
+    from huggingface_hub.errors import HfHubHTTPError
 
     token = _require_env("HF_TOKEN")
     space_id = _require_env("HF_SPACE_ID")
     openai_key = _require_env("OPENAI_API_KEY")
     rate_limit = os.environ.get("EAC_RATE_LIMIT_PER_MIN", "10")
+    # Public by default: private Spaces require a paid HF plan. Set the workflow's
+    # `visibility` input (or HF_SPACE_VISIBILITY) to "private" only on a PRO account.
+    private = os.environ.get("HF_SPACE_VISIBILITY", "public").strip().lower() == "private"
+
+    if "/" not in space_id:
+        print(
+            f"[deploy] ERROR: HF_SPACE_ID must be 'namespace/space-name' (got {space_id!r}). "
+            "Set the GitHub repo variable HF_SPACE_ID to e.g. "
+            f"'{space_id}/enterprise-arch-copilot'.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     api = HfApi(token=token)
 
-    print(f"[deploy] Ensuring Space exists (private, docker): {space_id}")
-    api.create_repo(
-        repo_id=space_id,
-        repo_type="space",
-        space_sdk="docker",
-        private=True,
-        exist_ok=True,
-    )
+    visibility = "private" if private else "public"
+    print(f"[deploy] Ensuring Space exists ({visibility}, docker): {space_id}")
+    try:
+        api.create_repo(
+            repo_id=space_id,
+            repo_type="space",
+            space_sdk="docker",
+            private=private,
+            exist_ok=True,
+        )
+    except HfHubHTTPError as exc:
+        if "402" in str(exc) and private:
+            print(
+                "[deploy] ERROR: creating a PRIVATE Space returned 402 Payment Required. "
+                "Private Spaces need a paid HF plan. Re-run with visibility=public "
+                "(free), or upgrade to HF PRO.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        raise
+
+    # Enforce visibility on an already-existing Space (create_repo won't change it).
+    api.update_repo_settings(repo_id=space_id, repo_type="space", private=private)
 
     print("[deploy] Setting Space variables and secret")
     api.add_space_variable(space_id, "PORT", "7860")
