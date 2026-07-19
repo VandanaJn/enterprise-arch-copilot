@@ -4,6 +4,7 @@ import uuid
 
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
+from langgraph.checkpoint.memory import MemorySaver
 
 from src import config
 from src.agent import close_connections, create_enterprise_copilot
@@ -21,8 +22,8 @@ async def chat_loop():
     thread_id = str(uuid.uuid4())
     print(f"Session id: {thread_id}\n")
 
-    # Initialize the compiled LangGraph agent
-    agent = create_enterprise_copilot()
+    # Per-process memory so follow-up questions in this session share context.
+    agent = create_enterprise_copilot(checkpointer=MemorySaver())
 
     while True:
         try:

@@ -14,9 +14,10 @@ import logging
 import os
 
 import pytest
-from langchain_core.messages import AIMessage, AIMessageChunk
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 
 from src.agent import PROMPT_INJECTION_MESSAGE
+from src.api.app import _transcript
 from src.api.observability import (
     GUARDRAIL_BLOCKS,
     JsonLogFormatter,
@@ -68,15 +69,21 @@ def test_chunk_text_handles_block_content():
 
 
 class FakeAgent:
-    def __init__(self, events, error: Exception | None = None):
+    def __init__(self, events, error: Exception | None = None, state_messages=None):
         self._events = events
         self._error = error
+        self._state_messages = state_messages or []
 
     async def astream(self, inputs, run_config=None, stream_mode=None):
         for event in self._events:
             yield event
         if self._error is not None:
             raise self._error
+
+    async def aget_state(self, run_config):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(values={"messages": self._state_messages})
 
 
 def _canned_events():
@@ -305,3 +312,40 @@ def test_chat_rate_limited(client, monkeypatch):
     second = client.post("/chat", json={"message": "two"})
     assert first.status_code == 200
     assert second.status_code == 429
+
+
+# --- transcript + thread history ---------------------------------------------------
+
+
+def test_transcript_keeps_user_and_final_answers_only():
+    messages = [
+        HumanMessage(content="who owns checkout-service?"),
+        AIMessage(content="", tool_calls=[{"name": "query_sql_database", "args": {}, "id": "t1"}]),
+        AIMessage(content="Team Alpha owns checkout-service."),
+        HumanMessage(content="and the runbook?"),
+        AIMessage(content="RB-001 covers 504s."),
+    ]
+    assert _transcript(messages) == [
+        {"role": "user", "content": "who owns checkout-service?"},
+        {"role": "assistant", "content": "Team Alpha owns checkout-service."},
+        {"role": "user", "content": "and the runbook?"},
+        {"role": "assistant", "content": "RB-001 covers 504s."},
+    ]
+
+
+def test_thread_messages_endpoint_returns_transcript(client):
+    client.app.state.agent = FakeAgent(
+        [],
+        state_messages=[
+            HumanMessage(content="hi"),
+            AIMessage(content="hello, ask about PayLane"),
+        ],
+    )
+    response = client.get("/threads/t-77/messages")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["thread_id"] == "t-77"
+    assert body["messages"] == [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello, ask about PayLane"},
+    ]

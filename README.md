@@ -27,6 +27,7 @@ The fictional company **PayLane** (a payments-processing SaaS) is the data domai
 - **Hybrid retrieval.** A single user query can cross both a SQLite service catalog and a Chroma vector store, with the agent deciding when each is needed.
 - **Agent guardrails.** A layered defence-in-depth stack applied before any LLM call: input length + empty-message validation → ML-based prompt-injection detection (ProtectAI `deberta-v3-base-prompt-injection-v2`) → LLM triage with `out_of_scope` routing → tool-level SQL read-only enforcement and injection-safe parametrised queries.
 - **Deployable service.** A FastAPI + SSE API ([src/api/](src/api/)) streams tokens and tool calls, with a Dockerfile (CPU-only torch), `langgraph.json` for LangGraph Platform, and a Hugging Face Spaces deploy guide.
+- **Multi-turn memory.** A LangGraph checkpointer keeps per-thread conversation state, so follow-up questions resolve from context ("what is *their* on-call rotation?"); history is trimmed per turn and a per-turn state reset keeps a previously blocked thread usable.
 - **Observability.** LangSmith tracing for the LLM/agent layer; structured JSON logs, Prometheus `/metrics`, and guardrail-block counters for the service layer.
 - **Evaluation.** Golden-set evals in `tests/eval/` use `langsmith.evaluate()`.
 - **Resilience.** Tenacity-backed retry on LLM calls, narrowed exception handling, thread-safe lazy singletons for DB connections, and Windows-aware connection cleanup.

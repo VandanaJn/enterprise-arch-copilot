@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from langgraph.checkpoint.memory import MemorySaver
 from sse_starlette.sse import EventSourceResponse
 
 from src import config
@@ -40,11 +41,26 @@ def _health_reasons() -> list[str]:
     return reasons
 
 
+def _transcript(messages: list) -> list[dict]:
+    """User turns and final assistant answers as {role, content}; skips tool calls."""
+    out = []
+    for msg in messages:
+        mtype = getattr(msg, "type", None)
+        content = msg.content if isinstance(getattr(msg, "content", ""), str) else ""
+        if mtype == "human" and content:
+            out.append({"role": "user", "content": content})
+        elif mtype == "ai" and content and not getattr(msg, "tool_calls", None):
+            out.append({"role": "assistant", "content": content})
+    return out
+
+
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         configure_json_logging()
-        app.state.agent = create_enterprise_copilot()
+        # MemorySaver keeps per-thread conversation state for multi-turn chat (in
+        # process; swap for a durable AsyncSqliteSaver to survive restarts).
+        app.state.agent = create_enterprise_copilot(checkpointer=MemorySaver())
         if config.warm_injection_detector():
             # Load the DeBERTa classifier now so the first request doesn't pay
             # model-load latency. detect_prompt_injection fails open on errors.
@@ -95,6 +111,15 @@ def create_app() -> FastAPI:
             run_id=str(run_id) if config.debug_mode() else None,
         )
         return EventSourceResponse(stream)
+
+    @app.get("/threads/{thread_id}/messages")
+    async def thread_messages(request: Request, thread_id: str):
+        # Clean transcript for restoring a conversation in the UI: user turns and
+        # final assistant answers only (no tool calls or internal scratch messages).
+        run_config = {"configurable": {"thread_id": thread_id}}
+        snapshot = await request.app.state.agent.aget_state(run_config)
+        messages = (snapshot.values or {}).get("messages", []) if snapshot else []
+        return {"thread_id": thread_id, "messages": _transcript(messages)}
 
     @app.get("/", include_in_schema=False)
     async def root():

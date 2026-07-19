@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Literal
 
-from langchain_core.messages import AIMessage, AnyMessage, BaseMessage
+from langchain_core.messages import AIMessage, AnyMessage, BaseMessage, trim_messages
 from pydantic import BaseModel, Field
 
 
@@ -61,3 +61,32 @@ def extract_final_assistant_text(messages: Sequence[AnyMessage]) -> str:
         if m.content:
             return m.content if isinstance(m.content, str) else str(m.content)
     return ""
+
+
+def trim_history(messages: Sequence[AnyMessage], max_messages: int) -> list[AnyMessage]:
+    """Keep the most recent messages for an LLM call, bounding multi-turn token growth.
+
+    Counts messages (not tokens) and starts the window on a human message so no
+    orphan tool/assistant-tool-call messages lead the list (which the OpenAI API
+    rejects). Returns the full list unchanged when it already fits.
+    """
+    msgs = list(messages)
+    if max_messages <= 0 or len(msgs) <= max_messages:
+        return msgs
+    trimmed = trim_messages(
+        msgs,
+        max_tokens=max_messages,
+        token_counter=len,
+        strategy="last",
+        start_on="human",
+        include_system=False,
+        allow_partial=False,
+    )
+    # trim_messages can return empty if it can't find a clean human boundary within
+    # the window; fall back to the most recent human-led slice.
+    if trimmed:
+        return list(trimmed)
+    for i in range(max(0, len(msgs) - max_messages), len(msgs)):
+        if getattr(msgs[i], "type", None) == "human":
+            return msgs[i:]
+    return msgs[-max_messages:]
