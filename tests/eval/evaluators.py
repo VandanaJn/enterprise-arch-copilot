@@ -7,6 +7,8 @@ Evaluators run per example:
   expected_sources annotation. These separate retrieval failures from generation
   failures: low recall means the RAG layer missed the doc; good recall with bad
   factuality means generation went wrong despite the right context.
+- citation_validity: deterministic, fraction of the answer's inline [doc-id] citations
+  that are backed by a retrieved doc (catches hallucinated citations).
 - factuality: LLM-as-judge — does the output agree with reference_facts?
 - groundedness: LLM-as-judge — does the output stick to PayLane domain language and concrete facts?
 - appropriate_decline: LLM-as-judge — for out-of-scope examples, did the agent decline politely?
@@ -106,6 +108,30 @@ def retrieval_precision(
     hits = expected & retrieved
     row["score"] = len(hits) / len(retrieved)
     row["comment"] = f"{len(hits)}/{len(retrieved)} retrieved sources were expected"
+    return row
+
+
+def citation_validity(
+    inputs: dict, reference_outputs: dict | None = None, outputs: dict | None = None
+) -> dict:
+    """Fraction of the answer's inline citations that are backed by a retrieved doc.
+
+    Measures whether citations are grounded (not hallucinated), not whether the
+    answer cited enough. Score is None (skipped) when the answer cites nothing, so
+    non-doc answers (SQL lookups, declines) don't drag the metric.
+    """
+    from src.citations import extract_cited_sources
+
+    cited = [s.lower() for s in extract_cited_sources((outputs or {}).get("output", ""))]
+    retrieved = {s.lower() for s in (outputs or {}).get("retrieved_sources") or []}
+    row: dict = {"key": "citation_validity"}
+    if not cited:
+        row["score"] = None
+        row["comment"] = "no inline citations; skipped"
+        return row
+    valid = [s for s in cited if s in retrieved]
+    row["score"] = len(valid) / len(cited)
+    row["comment"] = f"{len(valid)}/{len(cited)} citations backed by a retrieved doc"
     return row
 
 
@@ -256,10 +282,16 @@ ALL_EVALUATORS = [
     keyword_coverage,
     retrieval_recall,
     retrieval_precision,
+    citation_validity,
     factuality,
     groundedness,
     appropriate_decline,
 ]
 
 # Free evaluators safe for quick/CI mode (no LLM-judge calls).
-DETERMINISTIC_EVALUATORS = [keyword_coverage, retrieval_recall, retrieval_precision]
+DETERMINISTIC_EVALUATORS = [
+    keyword_coverage,
+    retrieval_recall,
+    retrieval_precision,
+    citation_validity,
+]

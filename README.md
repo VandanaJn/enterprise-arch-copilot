@@ -28,6 +28,7 @@ The fictional company **PayLane** (a payments-processing SaaS) is the data domai
 - **Agent guardrails.** A layered defence-in-depth stack applied before any LLM call: input length + empty-message validation → ML-based prompt-injection detection (ProtectAI `deberta-v3-base-prompt-injection-v2`) → LLM triage with `out_of_scope` routing → tool-level SQL read-only enforcement and injection-safe parametrised queries.
 - **Deployable service.** A FastAPI + SSE API ([src/api/](src/api/)) streams tokens and tool calls, with a Dockerfile (CPU-only torch), `langgraph.json` for LangGraph Platform, and a Hugging Face Spaces deploy guide.
 - **Multi-turn memory.** A LangGraph checkpointer keeps per-thread conversation state, so follow-up questions resolve from context ("what is *their* on-call rotation?"); history is trimmed per turn and a per-turn state reset keeps a previously blocked thread usable.
+- **Grounded citations.** Answers cite the exact runbook/ADR/postmortem they used as inline `[doc-id]` tags plus a Sources line, and a deterministic `citation_validity` evaluator flags any citation not backed by a retrieved document.
 - **Observability.** LangSmith tracing for the LLM/agent layer; structured JSON logs, Prometheus `/metrics`, and guardrail-block counters for the service layer.
 - **Evaluation.** Golden-set evals in `tests/eval/` use `langsmith.evaluate()`.
 - **Resilience.** Tenacity-backed retry on LLM calls, narrowed exception handling, thread-safe lazy singletons for DB connections, and Windows-aware connection cleanup.
@@ -204,6 +205,7 @@ Optional path overrides (rarely needed; tests use these):
 | `EAC_EVAL_QUICK` | unset (set to `1` for CI-friendly subset eval) |
 | `EAC_EVAL_MIN_SCORE` | `0.5` (per-evaluator floor for eval acceptance) |
 | `EAC_EVAL_RETRIEVAL_MIN` | `0.6` (floor for `retrieval_recall` mean) |
+| `EAC_EVAL_CITATION_MIN` | `0.8` (floor for `citation_validity` mean when any answer cites) |
 | `EAC_EVAL_DECLINE_MIN` | `0.9` (floor for declines on out-of-scope + adversarial-scope) |
 | `EAC_EVAL_REPORT_PATH` | `eval_reports/eval_report.json` (per-run cost/latency/score artifact) |
 
@@ -224,6 +226,7 @@ API service tuning:
 | `EAC_RATE_LIMIT_PER_MIN` | `0` (off) | Max `POST /chat` requests per client IP per minute |
 | `EAC_DEBUG` | `0` | `1` includes the LangSmith `run_id` in the SSE `done` event |
 | `EAC_WARM_INJECTION_DETECTOR` | `1` | Load the injection classifier at startup vs. lazily |
+| `EAC_HISTORY_MAX_MESSAGES` | `20` | Max prior messages fed to an LLM per turn (multi-turn context bound) |
 
 ---
 
@@ -245,13 +248,14 @@ This approach scales to a portfolio-credible corpus quickly while keeping the en
 
 ## Evaluation
 
-Real RAG systems live or die by their evals. The harness in [tests/eval/](tests/eval/) runs each commit against a 103-example golden set with six evaluators:
+Real RAG systems live or die by their evals. The harness in [tests/eval/](tests/eval/) runs each commit against a 103-example golden set with seven evaluators:
 
 | Evaluator | Type | Score | What it measures |
 |---|---|---|---|
 | `keyword_coverage` | deterministic | 0.0–1.0 | Fraction of expected keywords present in the answer |
 | `retrieval_recall` | deterministic | 0.0–1.0 | Fraction of `expected_sources` docs the agent actually retrieved |
 | `retrieval_precision` | deterministic | 0.0–1.0 | Fraction of retrieved docs that were expected |
+| `citation_validity` | deterministic | 0.0–1.0 | Fraction of the answer's inline `[doc-id]` citations backed by a retrieved doc |
 | `factuality` | LLM-as-judge (`gpt-4o`) | 0 / 0.5 / 1 | Agreement with `reference_facts` |
 | `groundedness` | LLM-as-judge (`gpt-4o`) | 0 / 0.5 / 1 | Uses concrete PayLane entities (services, ADR IDs) vs. generic content |
 | `appropriate_decline` | LLM-as-judge (`gpt-4o`) | 0 / 1 | For out-of-scope questions, did the agent decline politely? |
