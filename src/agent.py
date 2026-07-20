@@ -1,5 +1,4 @@
 import logging
-import operator
 import re
 import sqlite3
 import threading
@@ -14,6 +13,7 @@ from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemM
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
 from sqlalchemy import create_engine
 from sqlalchemy import text as sql_text
 from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
@@ -25,6 +25,7 @@ from src.incident_workflow import (
     extract_final_assistant_text,
     latest_user_text,
     route_target_for_mode,
+    trim_history,
 )
 
 load_dotenv()
@@ -357,7 +358,10 @@ DECLINE_MESSAGE = (
 
 
 class AgentState(TypedDict):
-    messages: Annotated[Sequence[AnyMessage], operator.add]
+    # add_messages (not operator.add) dedupes by message id, so a subgraph that
+    # echoes prior messages doesn't duplicate them, and a checkpointer can persist
+    # a clean conversation across turns.
+    messages: Annotated[Sequence[AnyMessage], add_messages]
     mode: NotRequired[str]
     triage: NotRequired[dict]
     structured_findings: NotRequired[str]
@@ -383,8 +387,13 @@ PROMPT_INJECTION_MESSAGE = (
 )
 
 
-def create_enterprise_copilot():
-    """Supervisor graph: triage -> incident chain (SQL -> docs -> synthesize) or general ReAct agent."""
+def create_enterprise_copilot(checkpointer=None):
+    """Supervisor graph: triage -> incident chain (SQL -> docs -> synthesize) or general ReAct agent.
+
+    Pass a checkpointer (e.g. MemorySaver) to persist per-thread conversation state
+    for multi-turn use; default None compiles a stateless graph (evals, LangGraph
+    Platform, which injects its own persistence).
+    """
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
     triage_llm = llm.with_structured_output(TriageResult)
 
@@ -417,7 +426,15 @@ def create_enterprise_copilot():
                     )
                 ],
             }
-        return {}
+        # Reset per-turn scratch on success. With a checkpointer these persist across
+        # turns, so a thread whose previous turn was "rejected" would otherwise route
+        # straight back to decline_node forever.
+        return {
+            "mode": "",
+            "triage": {},
+            "structured_findings": "",
+            "runbook_findings": "",
+        }
 
     def prompt_injection_check_node(state: AgentState):
         text = latest_user_text(state["messages"])
@@ -438,7 +455,8 @@ def create_enterprise_copilot():
 
     def triage_node(state: AgentState):
         try:
-            triage_messages = [TRIAGE_SYSTEM_PROMPT, *state["messages"]]
+            history = trim_history(state["messages"], config.history_max_messages())
+            triage_messages = [TRIAGE_SYSTEM_PROMPT, *history]
             res = _invoke_with_retry(triage_llm, triage_messages)
             tr = res if isinstance(res, TriageResult) else TriageResult(mode="general")
         except Exception:
@@ -484,7 +502,8 @@ def create_enterprise_copilot():
         return {"messages": [resp]}
 
     def general_agent_node(state: AgentState):
-        return general_agent.invoke(state)
+        history = trim_history(state["messages"], config.history_max_messages())
+        return general_agent.invoke({**state, "messages": history})
 
     builder = StateGraph(AgentState)
     builder.add_node("validate_input", validate_input_node)
@@ -528,4 +547,4 @@ def create_enterprise_copilot():
     builder.add_edge("synthesize", END)
     builder.add_edge("general_agent", END)
 
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)

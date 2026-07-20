@@ -85,3 +85,8 @@ def rate_limit_per_minute() -> int:
 def warm_injection_detector() -> bool:
     """When true, the API loads the injection classifier at startup (first-request latency)."""
     return os.environ.get("EAC_WARM_INJECTION_DETECTOR", "1") == "1"
+
+
+def history_max_messages() -> int:
+    """Max prior messages fed to an LLM per turn (bounds multi-turn token growth)."""
+    return int(os.environ.get("EAC_HISTORY_MAX_MESSAGES", "20"))

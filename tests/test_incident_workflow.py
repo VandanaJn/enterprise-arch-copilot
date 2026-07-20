@@ -6,6 +6,7 @@ from src.incident_workflow import (
     extract_final_assistant_text,
     latest_user_text,
     route_target_for_mode,
+    trim_history,
 )
 
 
@@ -54,3 +55,41 @@ def test_extract_final_assistant_text_skips_tool_only_ai():
         AIMessage(content="x", tool_calls=[{"name": "t", "args": {}, "id": "1"}]),
     ]
     assert extract_final_assistant_text(msgs) == ""
+
+
+def test_trim_history_returns_all_when_within_limit():
+    msgs = [HumanMessage(content="a"), AIMessage(content="b")]
+    assert trim_history(msgs, 20) == msgs
+
+
+def test_trim_history_zero_limit_is_noop():
+    msgs = [HumanMessage(content="a"), AIMessage(content="b")]
+    assert trim_history(msgs, 0) == msgs
+
+
+def test_trim_history_keeps_recent_and_starts_on_human():
+    # Two clean turns; trimming to a small window keeps the most recent turn and
+    # starts on a human message (no orphan assistant/tool messages).
+    msgs = [
+        HumanMessage(content="turn 1"),
+        AIMessage(content="answer 1"),
+        HumanMessage(content="turn 2"),
+        AIMessage(content="answer 2"),
+    ]
+    trimmed = trim_history(msgs, 2)
+    assert trimmed[0].type == "human"
+    assert trimmed[-1].content == "answer 2"
+    assert len(trimmed) <= 3  # window may include the human boundary
+
+
+def test_trim_history_does_not_lead_with_tool_message():
+    msgs = [
+        HumanMessage(content="q"),
+        AIMessage(content="", tool_calls=[{"name": "t", "args": {}, "id": "1"}]),
+        ToolMessage(content="tool result", tool_call_id="1"),
+        AIMessage(content="final"),
+        HumanMessage(content="followup"),
+        AIMessage(content="final 2"),
+    ]
+    trimmed = trim_history(msgs, 3)
+    assert trimmed[0].type == "human"
