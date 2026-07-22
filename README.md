@@ -153,6 +153,7 @@ src/
     sse.py               # pure SSE event builders + astream adapter (token/tool filtering)
     observability.py     # JSON logging, request-id middleware, /metrics, guardrail counters
     rate_limit.py        # in-memory sliding-window limiter (public-demo abuse guard)
+    static/              # dependency-free web chat UI (index.html, app.js, style.css)
 templates/
   company_spec.md        # fictional company spec (seeds LLM generation)
   mock_docs/
@@ -317,6 +318,8 @@ The agent is exposed as a FastAPI service ([src/api/](src/api/)) that streams re
 make serve                 # uvicorn on http://127.0.0.1:8000
 ```
 
+Open `http://127.0.0.1:8000/` for the **web chat UI** (a dependency-free static page served by the API): streamed answers, tool-call chips, `[doc-id]` citation highlights, and multi-turn history restored from the thread. The raw endpoints are below if you prefer curl.
+
 ```bash
 # stream an incident brief (SSE): node -> tool_call -> token -> done events
 curl -N -X POST http://127.0.0.1:8000/chat \
@@ -324,7 +327,7 @@ curl -N -X POST http://127.0.0.1:8000/chat \
   -d '{"message":"The /api/v1/checkout endpoint is throwing 504s. Who owns it and is there a runbook?"}'
 ```
 
-Endpoints: `POST /chat` (SSE; `{message, thread_id?}`, server mints a `thread_id` when omitted), `GET /healthz` (503 until the data files exist), `GET /metrics` (Prometheus), `GET /` (service info).
+Endpoints: `POST /chat` (SSE; `{message, thread_id?}`, server mints a `thread_id` when omitted), `GET /threads/{id}/messages` (transcript for restore), `GET /healthz` (503 until the data files exist), `GET /metrics` (Prometheus), `GET /` (web chat UI).
 
 **Docker** (CPU-only torch; data lives under `./data`, mounted read-only):
 

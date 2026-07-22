@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Enterprise Architecture Copilot</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">EA</span>
+        <div>
+          <h1>Enterprise Architecture Copilot</h1>
+          <p class="sub">On-call incident copilot for PayLane (demo)</p>
+        </div>
+      </div>
+      <button id="new-chat" class="ghost" title="Start a new conversation">New chat</button>
+    </header>
+
+    <main id="messages" class="messages" aria-live="polite">
+      <div class="empty" id="empty-state">
+        <p>Ask about a service owner, an incident, an ADR, or a runbook.</p>
+        <div class="examples">
+          <button class="example">The /api/v1/checkout endpoint is throwing 504s. Who owns it and is there a runbook?</button>
+          <button class="example">Why did we choose Kafka over RabbitMQ?</button>
+          <button class="example">Who owns ledger-service?</button>
+        </div>
+      </div>
+    </main>
+
+    <form id="composer" class="composer" autocomplete="off">
+      <textarea
+        id="input"
+        rows="1"
+        placeholder="Ask the copilot…"
+        aria-label="Message"
+      ></textarea>
+      <button id="send" type="submit" aria-label="Send">Send</button>
+    </form>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
