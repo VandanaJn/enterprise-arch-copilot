@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from langgraph.checkpoint.memory import MemorySaver
 from sse_starlette.sse import EventSourceResponse
 
@@ -121,15 +122,9 @@ def create_app() -> FastAPI:
         messages = (snapshot.values or {}).get("messages", []) if snapshot else []
         return {"thread_id": thread_id, "messages": _transcript(messages)}
 
-    @app.get("/", include_in_schema=False)
-    async def root():
-        # Placeholder until the chat UI ships (Phase C); keeps / reserved.
-        return {
-            "service": "enterprise-arch-copilot",
-            "chat": "POST /chat (SSE)",
-            "health": "GET /healthz",
-            "metrics": "GET /metrics",
-        }
+    # Serve the chat UI at / (mounted last so the API routes above take precedence).
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
     return app
 

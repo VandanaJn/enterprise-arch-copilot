@@ -275,11 +275,21 @@ def test_healthz_ok_with_assets(client, tmp_path, monkeypatch):
     assert response.json()["status"] == "ok"
 
 
-def test_root_and_metrics_and_request_id(client):
+def test_root_serves_chat_ui(client):
     root = client.get("/")
     assert root.status_code == 200
     assert "X-Request-ID" in root.headers
+    assert "text/html" in root.headers["content-type"]
+    assert "Enterprise Architecture Copilot" in root.text
 
+
+def test_static_assets_served(client):
+    for path in ("/app.js", "/style.css"):
+        resp = client.get(path)
+        assert resp.status_code == 200, path
+
+
+def test_metrics_endpoint(client):
     metrics = client.get("/metrics")
     assert metrics.status_code == 200
     assert "http_request" in metrics.text
