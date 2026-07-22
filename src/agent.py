@@ -291,6 +291,7 @@ _GROUNDING = """**Guidelines:**
 - **Supersession awareness**: ADRs include `supersedes` / `superseded_by` frontmatter. When asked about a current decision, prefer the latest non-superseded ADR.
 - **Robust SQL**: If a user provides a partial service name, use `LIKE '%name%'` when needed.
 - **Service discovery**: If SQL returns no rows, use `list_all_services` to find the correct name.
+- **Cite your sources**: Each `search_engineering_docs` result includes a `Cite as: [doc-id]` line. When you state a fact from a document, cite it inline with that exact tag, e.g. `[001-checkout-504-mitigation]`. Only cite doc-ids that appeared in a tool result; never invent one. End a document-grounded answer with a `**Sources:**` line listing the doc-ids you cited.
 - Be concise and technical."""
 
 GENERAL_SYSTEM_PROMPT = SystemMessage(
@@ -337,8 +338,12 @@ Use this structure:
 ## Runbook / mitigation steps
 ## Evidence (what the tools returned)
 ## Gaps
+## Sources
 
-Do not invent service names, teams, or runbook steps not supported by the findings."""
+Do not invent service names, teams, or runbook steps not supported by the findings.
+The runbook findings tag documents with `[doc-id]` (e.g. `[001-checkout-504-mitigation]`).
+Preserve those tags inline where you use a fact, and list them under `## Sources`. Only
+use doc-ids that appear in the findings; never invent one."""
 )
 
 TRIAGE_SYSTEM_PROMPT = SystemMessage(

@@ -11,11 +11,12 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from src.citations import (
     SEARCH_DOCS_TOOL_NAME,
+    extract_cited_sources,
     extract_retrieved_sources,
     format_doc_result,
     source_stem,
 )
-from tests.eval.evaluators import retrieval_precision, retrieval_recall
+from tests.eval.evaluators import citation_validity, retrieval_precision, retrieval_recall
 
 # --- source_stem ----------------------------------------------------------------
 
@@ -128,3 +129,68 @@ def test_retrieval_expected_but_nothing_retrieved():
 def test_retrieval_match_is_case_insensitive():
     recall, _ = _run_evaluators(["A-Doc"], ["a-doc"])
     assert recall["score"] == 1.0
+
+
+# --- format_doc_result includes a Cite-as tag -------------------------------------
+
+
+def test_format_doc_result_includes_cite_tag():
+    block = format_doc_result(1, "runbook", "docs/runbooks/001-checkout-504-mitigation.md", "body")
+    assert "Cite as: [001-checkout-504-mitigation]" in block
+    # still parseable by the retrieved-source extractor
+    msg = ToolMessage(content=block, name=SEARCH_DOCS_TOOL_NAME, tool_call_id="c1")
+    assert extract_retrieved_sources([msg]) == ["001-checkout-504-mitigation"]
+
+
+# --- extract_cited_sources --------------------------------------------------------
+
+
+def test_extract_cited_sources_finds_bracketed_stems():
+    answer = (
+        "The runbook [001-checkout-504-mitigation] covers 504s and ADR "
+        "[002-adopt-kafka-event-streaming] explains Kafka.\n\n**Sources:** "
+        "[001-checkout-504-mitigation], [002-adopt-kafka-event-streaming]"
+    )
+    assert extract_cited_sources(answer) == [
+        "001-checkout-504-mitigation",
+        "002-adopt-kafka-event-streaming",
+    ]
+
+
+def test_extract_cited_sources_ignores_markdown_links_and_plain_words():
+    answer = "See [the docs](https://example.com) and [note] but cite [rb-004-kafka-lag]."
+    assert extract_cited_sources(answer) == ["rb-004-kafka-lag"]
+
+
+def test_extract_cited_sources_empty():
+    assert extract_cited_sources("No citations here.") == []
+
+
+# --- citation_validity evaluator --------------------------------------------------
+
+
+def _citation_row(output: str, retrieved: list[str]) -> dict:
+    return citation_validity(
+        {"question": "q"}, {}, {"output": output, "retrieved_sources": retrieved}
+    )
+
+
+def test_citation_validity_all_backed():
+    row = _citation_row(
+        "Per [001-checkout-504-mitigation], restart the pods.",
+        ["001-checkout-504-mitigation", "004-kafka-consumer-lag-spike"],
+    )
+    assert row["score"] == 1.0
+
+
+def test_citation_validity_hallucinated_citation():
+    row = _citation_row(
+        "See [999-made-up-doc] and [001-checkout-504-mitigation].",
+        ["001-checkout-504-mitigation"],
+    )
+    assert row["score"] == 0.5
+
+
+def test_citation_validity_skipped_when_nothing_cited():
+    row = _citation_row("checkout-service is on v3.2.0.", ["001-checkout-504-mitigation"])
+    assert row["score"] is None

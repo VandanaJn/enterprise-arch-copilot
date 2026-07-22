@@ -229,6 +229,13 @@ def test_langsmith_evaluate_copilot(persistent_dataset: str):
     rr = _mean_of("retrieval_recall")
     assert rr >= retrieval_floor, f"retrieval_recall mean {rr:.2f} below floor {retrieval_floor}"
 
+    # Inline citations should almost always be grounded in a retrieved doc; a low
+    # score means the agent is inventing doc-ids. None (no citations anywhere) skips.
+    cv = means.get("citation_validity")
+    if cv is not None:
+        citation_floor = float(os.getenv("EAC_EVAL_CITATION_MIN", "0.8"))
+        assert cv >= citation_floor, f"citation_validity mean {cv:.2f} below {citation_floor}"
+
     if not is_quick:
         gr = _mean_of("groundedness")
         fa = _mean_of("factuality")

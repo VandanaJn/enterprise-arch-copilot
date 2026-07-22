@@ -16,6 +16,10 @@ SEARCH_DOCS_TOOL_NAME = "search_engineering_docs"
 _SOURCE_HEADER_TEMPLATE = "--- Document {n} (Type: {doc_type}, Source: {source}) ---"
 _SOURCE_HEADER_RE = re.compile(r"^--- Document \d+ \(Type: .*?, Source: (.*?)\) ---$", re.MULTILINE)
 
+# A cited doc-id stem in answer text, e.g. [001-checkout-504-mitigation]. Requires at
+# least one hyphen (stems always have one) and rejects markdown links [text](url).
+_CITATION_RE = re.compile(r"\[([0-9a-z]+(?:-[0-9a-z]+)+)\](?!\()")
+
 
 def source_stem(path: str) -> str:
     """Filename without directory or extension, tolerant of / and \\ separators.
@@ -28,9 +32,29 @@ def source_stem(path: str) -> str:
 
 
 def format_doc_result(n: int, doc_type: str, source: str, content: str) -> str:
-    """Render one retrieved document (1-based index n) as a tool-result block."""
+    """Render one retrieved document (1-based index n) as a tool-result block.
+
+    The `Cite as: [stem]` line gives the LLM the exact token to cite, so citations
+    match the stems the retrieval evaluators check.
+    """
     header = _SOURCE_HEADER_TEMPLATE.format(n=n, doc_type=doc_type, source=source)
-    return f"{header}\n{content}"
+    cite = f"Cite as: [{source_stem(source)}]"
+    return f"{header}\n{cite}\n{content}"
+
+
+def extract_cited_sources(answer_text: str) -> list[str]:
+    """Doc-ID stems the answer cites inline (e.g. [001-checkout-504-mitigation]).
+
+    De-duplicated, in order of first appearance.
+    """
+    stems: list[str] = []
+    seen: set[str] = set()
+    for stem in _CITATION_RE.findall(answer_text or ""):
+        low = stem.lower()
+        if low not in seen:
+            seen.add(low)
+            stems.append(low)
+    return stems
 
 
 def extract_retrieved_sources(messages: list[Any]) -> list[str]:
