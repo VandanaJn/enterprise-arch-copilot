@@ -24,6 +24,7 @@ The fictional company **PayLane** (a payments-processing SaaS) is the data domai
 
 - **Multi-agent orchestration with LangGraph.** A triage step routes incident-flavored questions through a structured-data agent → docs agent → synthesis chain; non-incident questions fall through to a single ReAct agent with all tools.
 - **Retrieval-Augmented Generation done with care.** Semantic chunking via `SemanticChunker`, MD5 hash-based incremental upserts (no duplicate embeddings on rerun), and explicit `document_type` metadata for hybrid filtering.
+- **Supersession-aware retrieval.** ADR `supersedes` / `superseded_by` frontmatter is indexed as chunk metadata, so "are we still using RabbitMQ?" pulls in the ADR that replaced the one cosine similarity matched, ranks the current decision first, and labels each result with its status.
 - **Hybrid retrieval.** A single user query can cross both a SQLite service catalog and a Chroma vector store, with the agent deciding when each is needed.
 - **Agent guardrails.** A layered defence-in-depth stack applied before any LLM call: input length + empty-message validation → ML-based prompt-injection detection (ProtectAI `deberta-v3-base-prompt-injection-v2`) → LLM triage with `out_of_scope` routing → tool-level SQL read-only enforcement and injection-safe parametrised queries.
 - **Deployable service.** A FastAPI + SSE API ([src/api/](src/api/)) streams tokens and tool calls, with a Dockerfile (CPU-only torch), `langgraph.json` for LangGraph Platform, and a Hugging Face Spaces deploy guide.

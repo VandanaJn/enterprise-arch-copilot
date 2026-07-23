@@ -1,5 +1,6 @@
 import hashlib
 import os
+import re
 
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
@@ -88,6 +89,68 @@ def chunk_documents(documents, embeddings):
     return final_chunks
 
 
+# A leading YAML frontmatter block, e.g. "---\nid: ADR-001\n...\n---\n".
+_FRONTMATTER_RE = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*\r?\n", re.DOTALL)
+_ADR_ID_RE = re.compile(r"^ADR-\d+$", re.IGNORECASE)
+
+
+def parse_frontmatter(content: str) -> dict[str, str]:
+    """Flat `key: value` pairs from a document's leading YAML frontmatter block.
+
+    Deliberately not a YAML parser: every frontmatter field in this corpus is a
+    scalar or a simple inline list, so a line splitter avoids a dependency and
+    cannot fail on an exotic construct. Returns {} when there is no block.
+    """
+    match = _FRONTMATTER_RE.match(content or "")
+    if not match:
+        return {}
+    fields: dict[str, str] = {}
+    for line in match.group(1).splitlines():
+        key, sep, value = line.partition(":")
+        if sep and key.strip():
+            fields[key.strip()] = value.strip()
+    return fields
+
+
+def _adr_ids(value: str) -> str:
+    """Normalize an ADR id field (`ADR-001` or `[ADR-001, ADR-003]`) to `ADR-001,ADR-003`.
+
+    Chroma metadata values must be scalars, so lists are flattened to a
+    comma-separated string rather than stored as a list.
+    """
+    ids = [part.strip().upper() for part in value.strip("[] ").split(",")]
+    return ",".join(i for i in ids if _ADR_ID_RE.match(i))
+
+
+def adr_metadata(content: str) -> dict[str, str]:
+    """Supersession fields (`adr_id`, `supersedes`, `superseded_by`) from an ADR's frontmatter.
+
+    Empty for non-ADR documents (runbooks carry `RB-NNN` ids) and for any field
+    the document doesn't declare, since Chroma rejects `None` metadata values.
+    """
+    fields = parse_frontmatter(content)
+    adr_id = _adr_ids(fields.get("id", ""))
+    if not adr_id:
+        return {}
+    metadata = {"adr_id": adr_id}
+    for key in ("supersedes", "superseded_by"):
+        if ids := _adr_ids(fields.get(key, "")):
+            metadata[key] = ids
+    return metadata
+
+
+def attach_adr_metadata(documents):
+    """Tag whole documents with their ADR supersession fields, before chunking.
+
+    Must run pre-chunking: only the first chunk of a document retains the
+    frontmatter text, but the splitters copy document metadata onto every chunk,
+    so tagging here makes each chunk of a superseded ADR self-describing.
+    """
+    for doc in documents:
+        doc.metadata.update(adr_metadata(doc.page_content))
+    return documents
+
+
 def enhance_metadata(chunks):
     """Adds metadata tags (e.g., document_type) based on document source path."""
     print("Injecting explicit metadata tags...")
@@ -140,13 +203,16 @@ def build_vector_database(docs_dir=None, chroma_db_dir=None):
         print("[OK] No changed documents found. Vector database is up to date!")
         return
 
-    # 4. Chunk changed documents
+    # 4. Tag ADR supersession fields (pre-chunking; chunks inherit doc metadata)
+    docs_to_process = attach_adr_metadata(docs_to_process)
+
+    # 5. Chunk changed documents
     final_chunks = chunk_documents(docs_to_process, embeddings)
 
-    # 5. Enhance metadata
+    # 6. Enhance metadata
     final_chunks = enhance_metadata(final_chunks)
 
-    # 6. Upsert into vector store
+    # 7. Upsert into vector store
     print(f"Inserting {len(final_chunks)} new chunks into Chroma DB...")
     vector_store.add_documents(documents=final_chunks)
 
