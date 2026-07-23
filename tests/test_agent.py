@@ -42,10 +42,11 @@ def _collect_tool_calls_from_stream(graph, inputs):
 
 @pytest.mark.integration
 def test_vector_tool_execution(built_test_data):
+    # Name the actual service (checkout-service, per ADR-004), not "payment gateway".
+    # PayLane has a separate payment-gateway-service, so the old phrasing steered
+    # retrieval to the wrong docs while still expecting the EKS migration ADR.
     result = search_engineering_docs.invoke(
-        {
-            "query": "What was the rationale behind migrating our payment gateway to the new AWS architecture?"
-        }
+        {"query": "What was the rationale behind migrating checkout-service to AWS EKS?"}
     )
 
     result_lower = result.lower()
