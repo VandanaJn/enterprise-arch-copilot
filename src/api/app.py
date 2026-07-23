@@ -111,7 +111,10 @@ def create_app() -> FastAPI:
             on_complete=record_guardrail_outcome,
             run_id=str(run_id) if config.debug_mode() else None,
         )
-        return EventSourceResponse(stream)
+        # sep="\n": sse-starlette defaults to "\r\n", which ends frames with
+        # "\r\n\r\n" and so contains no blank "\n\n" line for a client that splits
+        # on one. Both are legal SSE; LF is what the browser client parses.
+        return EventSourceResponse(stream, sep="\n")
 
     @app.get("/threads/{thread_id}/messages")
     async def thread_messages(request: Request, thread_id: str):
