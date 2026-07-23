@@ -137,14 +137,163 @@ def _invoke_with_retry(runnable, inputs):
     return runnable.invoke(inputs)
 
 
+# Bounds the extra vector-store calls one docs search can trigger, and how far a
+# supersession chain is followed before we stop looking for the current ADR.
+_MAX_SUPERSESSION_LOOKUPS = 2
+_MAX_SUPERSESSION_HOPS = 3
+_MAX_ADR_PIN_LOOKUPS = 2
+
+
+def _first_adr_id(value) -> str:
+    """First id from a metadata field like `ADR-002` or `ADR-002,ADR-005`."""
+    head = str(value or "").split(",")[0].strip().upper()
+    return head
+
+
+def _doc_key(doc) -> tuple:
+    """Identity for de-duplication: same source and same chunk text."""
+    return (doc.metadata.get("source", ""), doc.page_content)
+
+
+def _current_adr(doc, fetch_adr, seen_ids: set[str]):
+    """Walk `superseded_by` from `doc` and return the ADR that is current, or None.
+
+    Follows a chain (A superseded by B superseded by C) up to
+    _MAX_SUPERSESSION_HOPS, guarding against cycles with `seen_ids`. Lookup
+    failures are logged and treated as "no newer ADR", since a degraded search
+    still beats a failed one.
+    """
+    current = None
+    next_id = _first_adr_id(doc.metadata.get("superseded_by"))
+    seen_ids.add(_first_adr_id(doc.metadata.get("adr_id")))
+    for _ in range(_MAX_SUPERSESSION_HOPS):
+        if not next_id or next_id in seen_ids:
+            break
+        seen_ids.add(next_id)
+        try:
+            fetched = fetch_adr(next_id)
+        except Exception:
+            logger.exception("Supersession lookup failed for %s", next_id)
+            break
+        if fetched is None:
+            break
+        current = fetched
+        next_id = _first_adr_id(fetched.metadata.get("superseded_by"))
+    return current
+
+
+def _prefer_current_adrs(docs, fetch_adr, max_lookups: int = _MAX_SUPERSESSION_LOOKUPS):
+    """Re-rank retrieval results so a superseded ADR is preceded by the one replacing it.
+
+    Plain top-k cosine search answers "are we still using RabbitMQ?" with the
+    superseded ADR, because that is the document the question looks like. For each
+    result carrying `superseded_by`, this pulls in the ADR that replaced it and
+    ranks it first. The superseded ADR is kept, not dropped: questions about
+    history ("what did we use before Kafka?") still need it.
+
+    `fetch_adr(adr_id) -> Document | None` is injected so this stays pure and
+    unit-testable; production passes a metadata-filtered vector-store lookup.
+    """
+    by_adr_id = {
+        _first_adr_id(d.metadata.get("adr_id")): d for d in docs if d.metadata.get("adr_id")
+    }
+    lookups = 0
+
+    def _resolve(adr_id: str):
+        """Prefer an already-retrieved chunk over a fresh (billed) store lookup."""
+        nonlocal lookups
+        if adr_id in by_adr_id:
+            return by_adr_id[adr_id]
+        if lookups >= max_lookups:
+            return None
+        lookups += 1
+        return fetch_adr(adr_id)
+
+    ordered: list = []
+    placed: set[tuple] = set()
+    for doc in docs:
+        if _doc_key(doc) in placed:
+            continue
+        if doc.metadata.get("superseded_by"):
+            current = _current_adr(doc, _resolve, seen_ids=set())
+            if current is not None and _doc_key(current) not in placed:
+                ordered.append(current)
+                placed.add(_doc_key(current))
+        ordered.append(doc)
+        placed.add(_doc_key(doc))
+    return ordered
+
+
+# An ADR referenced by id in a question: "ADR-001", "adr 2", "adr_014".
+_ADR_QUERY_RE = re.compile(r"\badr[-_\s]?(\d{1,4})\b", re.IGNORECASE)
+
+
+def _adr_ids_in_query(query: str) -> list[str]:
+    """ADR ids a question names explicitly, normalized (`adr 2` -> `ADR-002`).
+
+    De-duplicated, in order of first appearance. Other document families
+    (`RB-004`, `PM-2024-001`) are not ADRs and are ignored.
+    """
+    ids: list[str] = []
+    for number in _ADR_QUERY_RE.findall(query or ""):
+        adr_id = f"ADR-{int(number):03d}"
+        if adr_id not in ids:
+            ids.append(adr_id)
+    return ids
+
+
+def _pin_referenced_adrs(docs, query: str, fetch_adr, max_lookups: int = _MAX_ADR_PIN_LOOKUPS):
+    """Put ADRs the question names by id at the front of the results.
+
+    Cosine similarity is weak on bare identifiers: "Is ADR-001 still in effect?"
+    embeds like every other governance sentence in the corpus and retrieves
+    unrelated documents. The `adr_id` metadata index answers it exactly, so an
+    ADR the question names is fetched directly and ranked first (the supersession
+    pass then pulls in whatever replaced it).
+    """
+    present = {_first_adr_id(d.metadata.get("adr_id")) for d in docs if d.metadata.get("adr_id")}
+    pinned = []
+    for adr_id in _adr_ids_in_query(query)[:max_lookups]:
+        if adr_id in present:
+            continue
+        try:
+            fetched = fetch_adr(adr_id)
+        except Exception:
+            logger.exception("ADR lookup failed for %s", adr_id)
+            continue
+        if fetched is not None:
+            pinned.append(fetched)
+            present.add(adr_id)
+    return pinned + list(docs)
+
+
+def _supersession_note(metadata: dict) -> str | None:
+    """One-line status for an ADR result, so the model can see it is (not) current."""
+    if superseded_by := metadata.get("superseded_by"):
+        return f"Status: superseded by {superseded_by}"
+    if supersedes := metadata.get("supersedes"):
+        return f"Status: current; supersedes {supersedes}"
+    return None
+
+
 @tool
 def search_engineering_docs(query: str) -> str:
     """Use this tool to search through unstructured engineering documentation like Architecture Decision Records (ADRs) and Runbooks.
     Use this when you need to understand the concept, rationale, or steps behind a system.
+    Pass the user's full question as the query, adding service names or error codes you already know.
+    Two-word keyword queries retrieve worse than a sentence, and an ADR referenced by id (e.g. "ADR-002") is looked up exactly.
     """
     try:
         store = get_vector_store()
         docs = store.similarity_search(query, k=3)
+
+        def fetch_adr(adr_id: str):
+            """Most query-relevant chunk of one ADR, by its indexed adr_id."""
+            hits = store.similarity_search(query, k=1, filter={"adr_id": adr_id})
+            return hits[0] if hits else None
+
+        docs = _pin_referenced_adrs(docs, query, fetch_adr)
+        docs = _prefer_current_adrs(docs, fetch_adr)
     except Exception as e:
         _clear_vector_store_cache()
         err = str(e)
@@ -166,7 +315,15 @@ def search_engineering_docs(query: str) -> str:
     for i, doc in enumerate(docs):
         doc_type = doc.metadata.get("document_type", "unknown")
         source = doc.metadata.get("source", "unknown")
-        formatted_results.append(format_doc_result(i + 1, doc_type, source, doc.page_content))
+        formatted_results.append(
+            format_doc_result(
+                i + 1,
+                doc_type,
+                source,
+                doc.page_content,
+                note=_supersession_note(doc.metadata),
+            )
+        )
 
     return "\n\n".join(formatted_results)
 
@@ -288,7 +445,7 @@ _GROUNDING = """**Guidelines:**
 - **Decline out-of-scope questions**: If the user asks about something unrelated to PayLane's services, infrastructure, ADRs, runbooks, postmortems, or incidents (e.g. weather, jokes, general programming help), politely decline and remind them what you can help with.
 - **When no docs are found**: Say clearly that no relevant document was found. Do not invent an answer.
 - **When SQL has no rows**: Say so; do not make up service or endpoint data.
-- **Supersession awareness**: ADRs include `supersedes` / `superseded_by` frontmatter. When asked about a current decision, prefer the latest non-superseded ADR.
+- **Supersession awareness**: Technology choices live in ADRs, not in the service catalog, so answer "are we still using X?" or "what is our current Y?" with `search_engineering_docs`, never from SQL alone. Each ADR result carries a `Status:` line (`superseded by ADR-NNN`, or `current; supersedes ADR-NNN`). Answer from the current ADR and name the superseded one only as history.
 - **Robust SQL**: If a user provides a partial service name, use `LIKE '%name%'` when needed.
 - **Service discovery**: If SQL returns no rows, use `list_all_services` to find the correct name.
 - **Cite your sources**: Each `search_engineering_docs` result includes a `Cite as: [doc-id]` line. When you state a fact from a document, cite it inline with that exact tag, e.g. `[001-checkout-504-mitigation]`. Only cite doc-ids that appeared in a tool result; never invent one. End a document-grounded answer with a `**Sources:**` line listing the doc-ids you cited.

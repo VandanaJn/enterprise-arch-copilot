@@ -92,6 +92,10 @@ function scrollToBottom() {
 
 // --- SSE over fetch ----------------------------------------------------------
 
+// SSE allows CRLF, LF, or CR line endings, so match a blank line in any of them
+// rather than assuming "\n\n" (sse-starlette's default framing is CRLF).
+const FRAME_SEP = /\r\n\r\n|\n\n|\r\r/;
+
 async function* readSSE(response) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -100,10 +104,10 @@ async function* readSSE(response) {
     const { value, done } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
-    let sep;
-    while ((sep = buffer.indexOf("\n\n")) !== -1) {
-      const frame = buffer.slice(0, sep);
-      buffer = buffer.slice(sep + 2);
+    let match;
+    while ((match = FRAME_SEP.exec(buffer)) !== null) {
+      const frame = buffer.slice(0, match.index);
+      buffer = buffer.slice(match.index + match[0].length);
       const evt = parseFrame(frame);
       if (evt) yield evt;
     }
@@ -113,7 +117,7 @@ async function* readSSE(response) {
 function parseFrame(frame) {
   let event = "message";
   const dataLines = [];
-  for (const line of frame.split("\n")) {
+  for (const line of frame.split(/\r\n|\n|\r/)) {
     if (line.startsWith("event:")) event = line.slice(6).trim();
     else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
   }

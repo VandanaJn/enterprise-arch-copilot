@@ -31,15 +31,22 @@ def source_stem(path: str) -> str:
     return name.rsplit(".", 1)[0] if "." in name else name
 
 
-def format_doc_result(n: int, doc_type: str, source: str, content: str) -> str:
+def format_doc_result(
+    n: int, doc_type: str, source: str, content: str, note: str | None = None
+) -> str:
     """Render one retrieved document (1-based index n) as a tool-result block.
 
     The `Cite as: [stem]` line gives the LLM the exact token to cite, so citations
-    match the stems the retrieval evaluators check.
+    match the stems the retrieval evaluators check. `note` is an optional extra
+    header line (e.g. an ADR's supersession status); it sits below `Cite as:` so
+    the header format the extractor parses is unchanged.
     """
     header = _SOURCE_HEADER_TEMPLATE.format(n=n, doc_type=doc_type, source=source)
-    cite = f"Cite as: [{source_stem(source)}]"
-    return f"{header}\n{cite}\n{content}"
+    lines = [header, f"Cite as: [{source_stem(source)}]"]
+    if note:
+        lines.append(note)
+    lines.append(content)
+    return "\n".join(lines)
 
 
 def extract_cited_sources(answer_text: str) -> list[str]:

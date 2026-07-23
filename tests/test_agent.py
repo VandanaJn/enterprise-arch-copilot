@@ -55,6 +55,26 @@ def test_vector_tool_execution(built_test_data):
 
 
 @pytest.mark.integration
+def test_superseded_adr_is_answered_with_the_current_one(built_test_data):
+    """Cosine search matches the RabbitMQ ADR; the current Kafka ADR must come with it."""
+    result = search_engineering_docs.invoke({"query": "Are we still using RabbitMQ?"})
+
+    assert "002-adopt-kafka-event-streaming" in result
+    assert "Status: superseded by ADR-002" in result
+    # The current decision is ranked ahead of the superseded one.
+    assert result.index("002-adopt-kafka-event-streaming") < result.index(
+        "001-rabbitmq-inter-service-messaging"
+    )
+
+
+@pytest.mark.integration
+def test_adr_referenced_by_id_is_retrieved_exactly(built_test_data):
+    """Bare identifiers embed poorly; the adr_id metadata filter answers them."""
+    result = search_engineering_docs.invoke({"query": "Is ADR-001 still in effect?"})
+    assert "001-rabbitmq-inter-service-messaging" in result
+
+
+@pytest.mark.integration
 def test_sql_tool_execution(built_test_data):
     result = query_sql_database.invoke(
         {"query": "SELECT owner_team FROM service_catalog WHERE name = 'user-profile-service'"}

@@ -308,6 +308,23 @@ def test_chat_streams_sse_and_round_trips_thread_id(client):
     assert '"thread_id": "t-abc"' in body
 
 
+def test_chat_frames_end_with_a_blank_line_the_ui_can_split_on(client):
+    """Regression: the UI never rendered anything because of frame separators.
+
+    sse-starlette defaults to `\\r\\n` line endings, so frames end with
+    `\\r\\n\\r\\n`, which contains no `\\n\\n`. The browser client splits the stream
+    on a blank line, found no frame boundary, and dropped every event including
+    `done`, leaving an empty chat bubble while the server streamed normally.
+    """
+    client.app.state.agent = FakeAgent(_canned_events())
+    body = client.post("/chat", json={"message": "504s on checkout"}).text
+
+    frames = [f for f in body.split("\n\n") if f.strip()]
+    assert len(frames) > 1, "no frame boundary the UI parser can find"
+    assert all(f.lstrip().startswith("event: ") for f in frames)
+    assert frames[-1].lstrip().startswith("event: done")
+
+
 def test_chat_mints_thread_id_when_absent(client):
     client.app.state.agent = FakeAgent(_canned_events())
     response = client.post("/chat", json={"message": "hello"})

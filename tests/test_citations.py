@@ -142,6 +142,21 @@ def test_format_doc_result_includes_cite_tag():
     assert extract_retrieved_sources([msg]) == ["001-checkout-504-mitigation"]
 
 
+def test_format_doc_result_renders_an_optional_note_without_breaking_parsing():
+    block = format_doc_result(
+        1,
+        "adr",
+        "docs/adrs/001-rabbitmq-inter-service-messaging.md",
+        "body",
+        note="Status: superseded by ADR-002",
+    )
+    lines = block.splitlines()
+    assert lines[1] == "Cite as: [001-rabbitmq-inter-service-messaging]"
+    assert lines[2] == "Status: superseded by ADR-002"
+    msg = ToolMessage(content=block, name=SEARCH_DOCS_TOOL_NAME, tool_call_id="c1")
+    assert extract_retrieved_sources([msg]) == ["001-rabbitmq-inter-service-messaging"]
+
+
 # --- extract_cited_sources --------------------------------------------------------
 
 
