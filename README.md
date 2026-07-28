@@ -229,6 +229,10 @@ API service tuning:
 | `EAC_DEBUG` | `0` | `1` includes the LangSmith `run_id` in the SSE `done` event |
 | `EAC_WARM_INJECTION_DETECTOR` | `1` | Load the injection classifier at startup vs. lazily |
 | `EAC_HISTORY_MAX_MESSAGES` | `20` | Max prior messages fed to an LLM per turn (multi-turn context bound) |
+| `EAC_SUMMARIZATION_TRIGGER_TOKENS` | `3000` | Token count at which the general agent summarizes older turns |
+| `EAC_SUMMARIZATION_KEEP_MESSAGES` | `12` | Recent messages the summarizer preserves verbatim |
+| `EAC_CONTEXT_EDIT_TRIGGER_TOKENS` | `6000` | Token count at which incident sub-agents clear stale tool results |
+| `EAC_CONTEXT_EDIT_KEEP` | `3` | Most recent tool results kept intact when context editing fires |
 
 ---
 
