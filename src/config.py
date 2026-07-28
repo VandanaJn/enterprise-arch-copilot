@@ -90,3 +90,23 @@ def warm_injection_detector() -> bool:
 def history_max_messages() -> int:
     """Max prior messages fed to an LLM per turn (bounds multi-turn token growth)."""
     return int(os.environ.get("EAC_HISTORY_MAX_MESSAGES", "20"))
+
+
+def summarization_trigger_tokens() -> int:
+    """Token count at which the general agent summarizes older turns."""
+    return int(os.environ.get("EAC_SUMMARIZATION_TRIGGER_TOKENS", "3000"))
+
+
+def summarization_keep_messages() -> int:
+    """Recent messages the summarizer preserves verbatim when it compacts history."""
+    return int(os.environ.get("EAC_SUMMARIZATION_KEEP_MESSAGES", "12"))
+
+
+def context_edit_trigger_tokens() -> int:
+    """Token count at which the incident sub-agents clear stale tool results."""
+    return int(os.environ.get("EAC_CONTEXT_EDIT_TRIGGER_TOKENS", "6000"))
+
+
+def context_edit_keep_tool_results() -> int:
+    """Most recent tool results kept intact when context editing fires."""
+    return int(os.environ.get("EAC_CONTEXT_EDIT_KEEP", "3"))
