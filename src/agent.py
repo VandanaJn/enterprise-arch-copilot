@@ -7,6 +7,11 @@ from typing import Annotated, NotRequired, TypedDict
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
+from langchain.agents.middleware import (
+    ClearToolUsesEdit,
+    ContextEditingMiddleware,
+    SummarizationMiddleware,
+)
 from langchain_chroma import Chroma
 from langchain_community.utilities import SQLDatabase
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
@@ -555,6 +560,13 @@ def create_enterprise_copilot(checkpointer=None):
     Pass a checkpointer (e.g. MemorySaver) to persist per-thread conversation state
     for multi-turn use; default None compiles a stateless graph (evals, LangGraph
     Platform, which injects its own persistence).
+
+    Context growth in the ReAct agents is managed with LangChain middleware: the
+    general agent uses SummarizationMiddleware (summarize older turns, keep recent),
+    and the incident sub-agents use ContextEditingMiddleware (clear stale tool
+    results). Thresholds are env-configurable via config.summarization_* and
+    config.context_edit_*. The hand-written triage/synthesize nodes are plain LLM
+    calls and continue to bound history with trim_history.
     """
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
     triage_llm = llm.with_structured_output(TriageResult)
@@ -563,9 +575,35 @@ def create_enterprise_copilot(checkpointer=None):
     sql_tools = [query_sql_database, list_all_services, query_incidents]
     doc_tools = [search_engineering_docs]
 
-    general_agent = create_agent(llm, tools=all_tools, system_prompt=GENERAL_SYSTEM_PROMPT)
-    structured_agent = create_agent(llm, tools=sql_tools, system_prompt=STRUCTURED_SYSTEM_PROMPT)
-    runbook_agent = create_agent(llm, tools=doc_tools, system_prompt=RUNBOOK_SYSTEM_PROMPT)
+    # The conversational general agent summarizes older turns (multi-turn history
+    # matters); the single-shot incident sub-agents clear stale tool results, which
+    # are the bulk of their in-loop token growth. See create_enterprise_copilot docstring.
+    summarization_mw = SummarizationMiddleware(
+        model=llm,
+        trigger=("tokens", config.summarization_trigger_tokens()),
+        keep=("messages", config.summarization_keep_messages()),
+    )
+    context_editing_mw = ContextEditingMiddleware(
+        edits=[
+            ClearToolUsesEdit(
+                trigger=config.context_edit_trigger_tokens(),
+                keep=config.context_edit_keep_tool_results(),
+            )
+        ]
+    )
+
+    general_agent = create_agent(
+        llm, tools=all_tools, system_prompt=GENERAL_SYSTEM_PROMPT, middleware=[summarization_mw]
+    )
+    structured_agent = create_agent(
+        llm,
+        tools=sql_tools,
+        system_prompt=STRUCTURED_SYSTEM_PROMPT,
+        middleware=[context_editing_mw],
+    )
+    runbook_agent = create_agent(
+        llm, tools=doc_tools, system_prompt=RUNBOOK_SYSTEM_PROMPT, middleware=[context_editing_mw]
+    )
 
     def validate_input_node(state: AgentState):
         text = latest_user_text(state["messages"])
