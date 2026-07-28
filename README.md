@@ -250,7 +250,7 @@ This approach scales to a portfolio-credible corpus quickly while keeping the en
 
 ## Evaluation
 
-Real RAG systems live or die by their evals. The harness in [tests/eval/](tests/eval/) runs each commit against a 103-example golden set with seven evaluators:
+Real RAG systems live or die by their evals. The harness in [tests/eval/](tests/eval/) runs each commit against a 103-example golden set with eight evaluators:
 
 | Evaluator | Type | Score | What it measures |
 |---|---|---|---|
@@ -258,6 +258,7 @@ Real RAG systems live or die by their evals. The harness in [tests/eval/](tests/
 | `retrieval_recall` | deterministic | 0.0–1.0 | Fraction of `expected_sources` docs the agent actually retrieved |
 | `retrieval_precision` | deterministic | 0.0–1.0 | Fraction of retrieved docs that were expected |
 | `citation_validity` | deterministic | 0.0–1.0 | Fraction of the answer's inline `[doc-id]` citations backed by a retrieved doc |
+| `routing_accuracy` | deterministic | 0.0 / 1.0 | Did triage route to the mode the example's category implies (skipped for `ambiguous`)? |
 | `factuality` | LLM-as-judge (`gpt-4o`) | 0 / 0.5 / 1 | Agreement with `reference_facts` |
 | `groundedness` | LLM-as-judge (`gpt-4o`) | 0 / 0.5 / 1 | Uses concrete PayLane entities (services, ADR IDs) vs. generic content |
 | `appropriate_decline` | LLM-as-judge (`gpt-4o`) | 0 / 1 | For out-of-scope questions, did the agent decline politely? |
@@ -282,7 +283,7 @@ The dataset is uploaded to LangSmith as a **persistent named dataset** (`eac-cop
 Each run also writes a cost/latency/score report (`eval_reports/eval_report.json`: tokens, dollars, p50/p95 latency, per-category means) surfaced from data LangSmith already records.
 
 ```bash
-make eval                          # full run, ~103 examples × 6 evaluators (a few $ OpenAI)
+make eval                          # full run, ~103 examples × 8 evaluators (a few $ OpenAI)
 EAC_EVAL_QUICK=1 make eval         # 2 per category × deterministic evaluators only (CI-friendly)
 ```
 

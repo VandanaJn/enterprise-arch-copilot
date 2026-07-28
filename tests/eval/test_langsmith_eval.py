@@ -105,6 +105,9 @@ def copilot_target(inputs: dict) -> dict:
         # Doc-ID stems the agent actually retrieved, letting retrieval_recall/precision
         # separate retrieval failures from generation failures.
         "retrieved_sources": extract_retrieved_sources(result["messages"]),
+        # The route triage chose, so routing_accuracy can grade it against the
+        # example's category. invoke() returns the full final state incl. mode.
+        "mode": result.get("mode", ""),
     }
 
 
@@ -138,6 +141,9 @@ def _to_example(row: dict) -> dict:
             "expected_decline": bool(row.get("expected_decline", False)),
             "expected_sources": row.get("expected_sources", []),
             "expected_not_found": bool(row.get("expected_not_found", False)),
+            # Ground-truth category, so routing_accuracy reaches it via the standard
+            # reference_outputs signature (also kept in metadata for the report).
+            "category": row["category"],
         },
         "metadata": {
             "id": row["id"],

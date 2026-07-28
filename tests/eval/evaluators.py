@@ -9,6 +9,9 @@ Evaluators run per example:
   factuality means generation went wrong despite the right context.
 - citation_validity: deterministic, fraction of the answer's inline [doc-id] citations
   that are backed by a retrieved doc (catches hallucinated citations).
+- routing_accuracy: deterministic, did the triage LLM pick the route each example's
+  category implies? Grades the text->mode triage classification directly (a mis-route
+  is otherwise only caught indirectly via the output graders).
 - factuality: LLM-as-judge — does the output agree with reference_facts?
 - groundedness: LLM-as-judge — does the output stick to PayLane domain language and concrete facts?
 - appropriate_decline: LLM-as-judge — for out-of-scope examples, did the agent decline politely?
@@ -132,6 +135,44 @@ def citation_validity(
     valid = [s for s in cited if s in retrieved]
     row["score"] = len(valid) / len(cited)
     row["comment"] = f"{len(valid)}/{len(cited)} citations backed by a retrieved doc"
+    return row
+
+
+# --- Deterministic: routing_accuracy -----------------------------------------
+
+# category -> the route triage should choose. None = no single correct route (skip).
+CATEGORY_TO_MODE = {
+    "multi-hop-incident": "incident",
+    "single-hop-doc": "general",
+    "factual": "general",
+    "supersession": "general",
+    "negative": "general",
+    "out-of-scope": "out_of_scope",
+    "adversarial-scope": "out_of_scope",
+    "ambiguous": None,
+}
+
+
+def routing_accuracy(
+    inputs: dict, reference_outputs: dict | None = None, outputs: dict | None = None
+) -> dict:
+    """Did the triage LLM pick the route this example's category implies?
+
+    Deterministic. Score is None (skipped) for categories with no single correct
+    route (ambiguous / unknown) or when the target did not surface a mode. This
+    isolates the text->mode triage classification from generation quality, which
+    the output graders (factuality, retrieval_recall) already cover indirectly.
+    """
+    category = (reference_outputs or {}).get("category")
+    expected = CATEGORY_TO_MODE.get(category)
+    actual = (outputs or {}).get("mode")
+    row: dict = {"key": "routing_accuracy"}
+    if expected is None or not actual:
+        row["score"] = None
+        row["comment"] = f"skipped (category={category}, mode={actual})"
+        return row
+    row["score"] = 1.0 if actual == expected else 0.0
+    row["comment"] = f"expected {expected}, got {actual}"
     return row
 
 
@@ -283,6 +324,7 @@ ALL_EVALUATORS = [
     retrieval_recall,
     retrieval_precision,
     citation_validity,
+    routing_accuracy,
     factuality,
     groundedness,
     appropriate_decline,
@@ -294,4 +336,5 @@ DETERMINISTIC_EVALUATORS = [
     retrieval_recall,
     retrieval_precision,
     citation_validity,
+    routing_accuracy,
 ]
