@@ -12,7 +12,7 @@ import logging
 import time
 import uuid
 
-from prometheus_client import Counter
+from prometheus_client import REGISTRY, Counter
 from prometheus_fastapi_instrumentator import Instrumentator
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -88,6 +88,112 @@ def setup_metrics(app) -> None:
     Instrumentator(excluded_handlers=["/metrics"]).instrument(app).expose(
         app, endpoint="/metrics", include_in_schema=False
     )
+
+
+def _histogram_quantile(buckets: list[tuple[float, float]], q: float) -> float | None:
+    """Interpolated quantile from Prometheus cumulative buckets (same math as PromQL).
+
+    `buckets` is `(le, cumulative_count)` pairs including the `+Inf` bucket. Returns
+    None when there are no observations. Beyond the last finite bucket the estimate
+    is clamped to that bucket's upper bound (we can't interpolate into `+Inf`).
+    """
+    buckets = sorted(buckets, key=lambda b: b[0])
+    if not buckets:
+        return None
+    total = buckets[-1][1]  # the +Inf bucket holds the full count
+    if total <= 0:
+        return None
+    rank = q * total
+    prev_le, prev_count = 0.0, 0.0
+    for le, cum in buckets:
+        if cum >= rank:
+            if le == float("inf"):
+                return prev_le
+            span = cum - prev_count
+            if span <= 0:
+                return le
+            return prev_le + (le - prev_le) * ((rank - prev_count) / span)
+        prev_le, prev_count = le, cum
+    return buckets[-1][0]
+
+
+def _collect_samples() -> dict[str, list[tuple[dict, float]]]:
+    """Snapshot the default registry as {sample_name: [(labels, value), ...]}."""
+    out: dict[str, list[tuple[dict, float]]] = {}
+    for family in REGISTRY.collect():
+        for sample in family.samples:
+            out.setdefault(sample.name, []).append((sample.labels, sample.value))
+    return out
+
+
+def metrics_summary() -> dict:
+    """Human-readable digest of the Prometheus series exposed at /metrics.
+
+    Folds the raw exposition text into request counts by endpoint, `/chat` average
+    latency, overall latency percentiles, and guardrail-block tallies, so a
+    developer can read a pulse without a Prometheus scraper.
+    """
+    samples = _collect_samples()
+
+    by_endpoint = []
+    total_requests = 0
+    for labels, value in samples.get("http_requests_total", []):
+        count = int(value)
+        total_requests += count
+        by_endpoint.append(
+            {
+                "handler": labels.get("handler", ""),
+                "method": labels.get("method", ""),
+                "status": labels.get("status", ""),
+                "count": count,
+            }
+        )
+    by_endpoint.sort(key=lambda r: (-r["count"], r["handler"], r["method"], r["status"]))
+
+    # /chat average from the per-handler histogram's count + sum.
+    chat_count = _handler_value(samples, "http_request_duration_seconds_count", "/chat")
+    chat_sum = _handler_value(samples, "http_request_duration_seconds_sum", "/chat")
+    chat_latency = None
+    if chat_count:
+        chat_latency = {"count": int(chat_count), "avg_seconds": round(chat_sum / chat_count, 2)}
+
+    # Overall percentiles from the high-resolution (many-bucket) histogram.
+    highr = []
+    for labels, value in samples.get("http_request_duration_highr_seconds_bucket", []):
+        le = labels.get("le", "")
+        highr.append((float("inf") if le == "+Inf" else float(le), value))
+    overall_latency = None
+    if highr:
+        overall_latency = {
+            "count": int(max(v for _, v in highr)),
+            "p50_seconds": _round3(_histogram_quantile(highr, 0.50)),
+            "p95_seconds": _round3(_histogram_quantile(highr, 0.95)),
+            "p99_seconds": _round3(_histogram_quantile(highr, 0.99)),
+        }
+
+    guardrail_blocks = {
+        labels.get("guardrail", ""): int(value)
+        for labels, value in samples.get("eac_guardrail_blocks_total", [])
+    }
+
+    return {
+        "requests": {"total": total_requests, "by_endpoint": by_endpoint},
+        "chat_latency": chat_latency,
+        "overall_latency": overall_latency,
+        "guardrail_blocks": guardrail_blocks,
+    }
+
+
+def _handler_value(samples: dict, name: str, handler: str) -> float | None:
+    """First sample value for `name` whose handler label matches, or None."""
+    for labels, value in samples.get(name, []):
+        if labels.get("handler") == handler:
+            return value
+    return None
+
+
+def _round3(x: float | None) -> float | None:
+    return round(x, 3) if x is not None else None
 
 
 def record_guardrail_outcome(final_mode: str, messages: list) -> None:

@@ -150,7 +150,7 @@ src/
   generate_mock_data.py  # templates -> docs/, plus engineering_data.db (services + endpoints + incidents)
   build_vector_db.py     # docs/ -> chroma_db/, with MD5 upsert
   api/
-    app.py               # FastAPI factory: /chat (SSE), /healthz, /metrics, lifespan
+    app.py               # FastAPI factory: /chat (SSE), /healthz, /metrics, /metrics/summary, lifespan
     sse.py               # pure SSE event builders + astream adapter (token/tool filtering)
     observability.py     # JSON logging, request-id middleware, /metrics, guardrail counters
     rate_limit.py        # in-memory sliding-window limiter (public-demo abuse guard)
@@ -333,7 +333,7 @@ curl -N -X POST http://127.0.0.1:8000/chat \
   -d '{"message":"The /api/v1/checkout endpoint is throwing 504s. Who owns it and is there a runbook?"}'
 ```
 
-Endpoints: `POST /chat` (SSE; `{message, thread_id?}`, server mints a `thread_id` when omitted), `GET /threads/{id}/messages` (transcript for restore), `GET /healthz` (503 until the data files exist), `GET /metrics` (Prometheus), `GET /` (web chat UI).
+Endpoints: `POST /chat` (SSE; `{message, thread_id?}`, server mints a `thread_id` when omitted), `GET /threads/{id}/messages` (transcript for restore), `GET /healthz` (503 until the data files exist), `GET /metrics` (Prometheus), `GET /metrics/summary` (human-readable digest: request counts, `/chat` latency, percentiles, guardrail tallies), `GET /` (web chat UI).
 
 **Docker** (CPU-only torch; data lives under `./data`, mounted read-only):
 
