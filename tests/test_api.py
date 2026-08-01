@@ -21,6 +21,8 @@ from src.api.app import _transcript
 from src.api.observability import (
     GUARDRAIL_BLOCKS,
     JsonLogFormatter,
+    _histogram_quantile,
+    metrics_summary,
     record_guardrail_outcome,
 )
 from src.api.rate_limit import SlidingWindowLimiter
@@ -232,6 +234,28 @@ def test_guardrail_counter_input_validation():
     assert _counter_value("input-validation") == before + 1
 
 
+def test_histogram_quantile_interpolates_within_bucket():
+    # 10 observations: 5 in <=0.1, 3 more by <=0.5, 1 more by <=1.0, 1 in +Inf.
+    buckets = [(0.1, 5.0), (0.5, 8.0), (1.0, 9.0), (float("inf"), 10.0)]
+    # p50 (rank 5) lands at the top of the first bucket: 0 + 0.1 * (5/5).
+    assert _histogram_quantile(buckets, 0.50) == pytest.approx(0.1)
+    # p95 (rank 9.5) falls in the +Inf bucket, so it clamps to the last finite le.
+    assert _histogram_quantile(buckets, 0.95) == 1.0
+
+
+def test_histogram_quantile_empty_is_none():
+    assert _histogram_quantile([], 0.5) is None
+    assert _histogram_quantile([(float("inf"), 0.0)], 0.5) is None
+
+
+def test_metrics_summary_shape():
+    summary = metrics_summary()
+    assert set(summary) == {"requests", "chat_latency", "overall_latency", "guardrail_blocks"}
+    assert isinstance(summary["requests"]["total"], int)
+    assert isinstance(summary["requests"]["by_endpoint"], list)
+    assert isinstance(summary["guardrail_blocks"], dict)
+
+
 # --- HTTP surface (TestClient, no LLM) ---------------------------------------------
 
 
@@ -293,6 +317,16 @@ def test_metrics_endpoint(client):
     metrics = client.get("/metrics")
     assert metrics.status_code == 200
     assert "http_request" in metrics.text
+
+
+def test_metrics_summary_endpoint(client):
+    # /healthz is instrumented (unlike /metrics*), so at least one request is counted.
+    client.get("/healthz")
+    resp = client.get("/metrics/summary")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert set(body) == {"requests", "chat_latency", "overall_latency", "guardrail_blocks"}
+    assert body["requests"]["total"] >= 1
 
 
 def test_chat_streams_sse_and_round_trips_thread_id(client):

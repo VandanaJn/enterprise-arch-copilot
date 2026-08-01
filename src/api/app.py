@@ -23,6 +23,7 @@ from src.agent import close_connections, create_enterprise_copilot, detect_promp
 from src.api.observability import (
     RequestContextMiddleware,
     configure_json_logging,
+    metrics_summary,
     record_guardrail_outcome,
     setup_metrics,
 )
@@ -87,6 +88,12 @@ def create_app() -> FastAPI:
                 status_code=503, content={"status": "unhealthy", "reasons": reasons}
             )
         return {"status": "ok", "reasons": []}
+
+    @app.get("/metrics/summary")
+    async def metrics_summary_endpoint():
+        # Human-readable digest of the raw Prometheus series at /metrics: request
+        # counts by endpoint, /chat latency, percentiles, and guardrail tallies.
+        return metrics_summary()
 
     @app.post("/chat")
     async def chat(request: Request, body: ChatRequest):
