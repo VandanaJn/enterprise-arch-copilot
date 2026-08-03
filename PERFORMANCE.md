@@ -4,9 +4,10 @@ A record of one optimization pass on the incident path. Decisions are in
 [DECISIONS.md](DECISIONS.md); this document holds the numbers, the method, and the
 things that turned out to be wrong.
 
-**Result: `/chat` average 18.9s → 10.2s on live traffic, eval p95 19.3s → 10.5s (-45%).**
-Answer quality mostly held, with one open regression on incident factuality that is
-partly explained by pre-existing routing defects.
+**Result: `/chat` average 18.9s → 10.2s on live traffic, eval p95 19.3s → 9.6s (-50%).**
+Answer quality held and then improved: `retrieval_recall` and `groundedness` finished at
+their best readings of the series, and the incident-factuality regression that looked
+settled for three runs turned out to be inside the noise and has since closed.
 
 ---
 
@@ -100,7 +101,102 @@ handing raw documents to synthesis.
 | turn total (3-run mean) | 12.07s | **9.97s** (warm runs 7.9s) |
 | TTFT | 8.06s | **6.59s** (warm 4.7s) |
 
-### 4c. Preload recent incidents
+### 4c. Async graph nodes (headroom, not latency)
+
+Worth stating plainly because it is easy to expect the wrong thing: **this made no
+single request faster.** The incident path is a sequential chain, and awaiting a sequence
+does not shorten it.
+
+Confirmed by stashing the change and probing both arms back to back, 3 runs each, same
+question, same session:
+
+| arm | mean | range |
+|---|---|---|
+| async nodes | 13.47s | 9.89-16.82 |
+| sync nodes (stashed) | 12.38s | 10.82-15.26 |
+
+The 1.1s gap sits well inside two heavily overlapping ranges at n=3, so it is not a
+result. The finding that matters is the other one: **both arms ran ~12-13s against the
+9.97s recorded for the same probe earlier in this work.** The slowdown is present in the
+unmodified code, so it belongs to the provider, not to this change. See the note on
+cross-day comparison in section 5.
+
+What it changes is the ceiling on concurrent requests. The API is async end to end, so
+this is about matching it rather than about beating the sync graph on a stopwatch. Every
+endpoint is `async def` and drives the graph through `astream` on uvicorn's single event
+loop. Sync nodes in that setting are not free: LangGraph runs each one with
+`run_in_executor` on the default thread pool, `min(32, cpu_count + 4)`, which is 28
+threads on this machine. A node holding a thread for the length of an LLM round trip is
+holding it for seconds, so the pool, not the model or the API, becomes what caps
+in-flight turns. Async nodes cost a coroutine instead, and the pool goes back to serving
+the genuinely blocking work that still needs it.
+
+The measurement worth keeping is a blocking check rather than a speedup:
+
+| | wall clock |
+|---|---|
+| 1 request | 9.59s |
+| 3 concurrent requests | 10.14s |
+
+Three overlapping turns cost 1.06x one turn. That number is evidence that no node still
+blocks the loop, which is the only claim it supports. It is not a 3x win over the sync
+graph: LangGraph would have run those same three turns on three pool threads and finished
+in comparable time. The difference shows up at the scale where 28 threads run out.
+
+The trap worth recording: converting nodes to `async def` while leaving blocking calls
+inline moves the blocking *onto* the event loop instead of a worker thread, which makes
+concurrency worse rather than better. Chroma has no native async client
+(`asimilarity_search` is a `run_in_executor` shim in langchain-core, commented as a
+"temporary workaround") and neither do sync `@tool` functions, so awaiting those is still
+correct because the shim yields the loop. The DeBERTa injection check has no such shim and
+is 60ms of pure CPU, so it goes through `asyncio.to_thread` explicitly. The 1.06x number
+above is how that was confirmed rather than assumed.
+
+### 4d. The bill for going async-only: two hangs and a missing deadline
+
+The graph no longer accepts `.invoke()`, so sync callers go through `invoke_sync()`.
+Getting that right took two attempts, and the second failure is the one worth reading.
+
+**First hang, at example 1 of 103.** `invoke_sync` was `asyncio.run()` per call.
+`asyncio.run` closes the loop it creates, and on Windows that runs
+`IocpProactor.close()`, which polls until every outstanding overlapped read completes. The
+pooled sockets inside `ChatOpenAI` are never explicitly closed, so their reads stay
+outstanding once the peer hangs up, and the close blocked forever at 0% CPU. Fixed with
+one event loop per thread, created on first use and never closed, which skips the teardown
+path entirely.
+
+**Second hang, at example 100 of 103.** Same symptom, 0% CPU, a worker parked in the
+loop's `select`. But this time the diagnosis had to go further than the loop, because the
+loop was doing exactly what it should: waiting for a read. What made it permanent was that
+nothing bounded the wait. `ChatOpenAI` was constructed without a `timeout`, so an OpenAI
+call had no deadline at all, and a socket that dies without the peer sending anything
+produces a read that never completes and an `await` that never resolves. No retry policy
+can rescue that, because a call that never returns never raises. `tenacity` was wrapping a
+coroutine that simply never finished.
+
+Two fixes, because there were two problems:
+
+*   **A deadline.** `EAC_LLM_TIMEOUT_SECONDS` (default 60s) is now passed to `ChatOpenAI`.
+    The slowest real call observed is ~11s, so it only fires on a broken connection, and
+    when it does it raises something `_ainvoke_with_retry` can retry.
+*   **Stop churning connection pools.** The eval target built a fresh graph, and so a
+    fresh `ChatOpenAI` and a fresh pool, for every one of the 103 examples, none of them
+    ever closed. It now builds one graph per worker thread and reuses it. Per thread and
+    not one shared instance, because each thread drives its own loop and an async HTTP
+    client's pooled connections belong to the loop that opened them.
+
+**Why the test suite missed both.** `make test` deselects the integration and eval
+markers, so none of the 208 unit tests ever called `invoke_sync`. The concurrency probe
+above drove `ainvoke` on a single long-lived loop, so it never exercised repeated
+create-and-destroy either. `tests/test_invoke_sync.py` now pins the loop lifecycle
+directly: reused, still open, one per thread, and callable repeatedly from several threads
+at once.
+
+The general lesson is the one about the deadline. An unbounded `await` on a network call
+is a latent hang anywhere, not just in an eval harness: the same missing timeout in the
+API would have been a request that occupies its slot forever.
+
+### 4e. Preload recent incidents
 
 Added after the eval showed briefs had silently stopped reporting incident history: once
 the catalog removed the need for tool calls, the model stopped calling `query_incidents`
@@ -133,30 +229,58 @@ validate_input          0.04s
 The two paths reconstruct to ~12.0s (incident) and ~8.3s (general), averaging 10.2s and
 matching the reported 10.17s.
 
+### Latency across days is not comparable
+
+Runs 5 and 6, taken after the async work, read p50 4.99s / 4.75s and p95 14.02s / 11.13s,
+against run 4's 3.50s / 9.59s. That looks like a 40% regression and is not one. Stashing
+the async change and probing both arms back to back put the *unmodified* code at 12.38s
+on the same question that recorded 9.97s earlier in this work, so the slowdown is in the
+provider, not the diff (section 4c has the numbers).
+
+The lesson is about the method, not the model. Every latency figure here is a wall clock
+around an OpenAI call, so **only runs from the same session compare cleanly**. Scores are
+robust to this and can be read across days; latency cannot. Where a latency claim in this
+document matters, it is backed by a same-session A/B rather than by two eval runs taken
+days apart.
+
+The p95 spread between runs 5 and 6, 14.02s to 11.13s on identical code, is the same point
+made a second way: at 103 examples the tail is noisy, and p50 is the more stable read.
+
 ### Quality
 
-Four full 103-example runs, LLM judges enabled. Run 2 graded 106 examples because of
-the dataset bug in section 7, so its column is indicative only.
+Six full 103-example runs, LLM judges enabled. Run 2 graded 106 examples because of
+the dataset bug in section 7, so its column is indicative only. Runs 5 and 6 are both the
+async code; 6 repeats 5 with the hang fixes from section 4d, so the pair also reads as a
+same-code variance estimate.
 
-| evaluator | baseline | no-incid | +incid | +merge fix |
-|---|---|---|---|---|
-| `citation_validity` | 1.000 | 1.000 | 0.991 | **1.000** |
-| `groundedness` | 0.733 | 0.716 | 0.726 | **0.745** |
-| `keyword_coverage` | 0.892 | 0.898 | 0.900 | 0.905 |
-| `appropriate_decline` | 0.864 | 0.882 | 0.875 | 0.885 |
-| `retrieval_recall` | 0.918 | 0.920 | 0.918 | 0.900 |
-| `routing_accuracy` | 0.924 | 0.926 | 0.913 | 0.913 |
-| `retrieval_precision` | 0.443 | 0.431 | 0.400 | 0.395 |
-| `factuality` | 0.903 | 0.869 | 0.876 | 0.856 |
-| latency p95 | 19.32s | 10.93s | 10.54s | **9.59s** |
+| evaluator | baseline | no-incid | +incid | +merge fix | async | async+fix |
+|---|---|---|---|---|---|---|
+| `citation_validity` | 1.000 | 1.000 | 0.991 | **1.000** | 1.000 | 1.000 |
+| `groundedness` | 0.733 | 0.716 | 0.726 | 0.745 | **0.757** | 0.752 |
+| `keyword_coverage` | 0.892 | 0.898 | 0.900 | **0.905** | 0.900 | 0.900 |
+| `appropriate_decline` | 0.864 | 0.882 | 0.875 | 0.885 | **0.893** | **0.893** |
+| `retrieval_recall` | 0.918 | 0.920 | 0.918 | 0.900 | **0.936** | **0.936** |
+| `routing_accuracy` | 0.924 | **0.926** | 0.913 | 0.913 | 0.924 | 0.924 |
+| `retrieval_precision` | **0.443** | 0.431 | 0.400 | 0.395 | 0.409 | 0.397 |
+| `factuality` | **0.903** | 0.869 | 0.876 | 0.856 | **0.903** | 0.898 |
 
 Concentrated in `multi-hop-incident`, the only category these changes touch:
 
-| | baseline | no-incid | +incid | +merge fix |
-|---|---|---|---|---|
-| `groundedness` | 0.833 | 0.768 | 0.812 | **0.875** |
-| `citation_validity` | 1.000 | 1.000 | 0.979 | **1.000** |
-| `factuality` | 0.870 | 0.778 | 0.800 | 0.771 |
+| | baseline | no-incid | +incid | +merge fix | async | async+fix |
+|---|---|---|---|---|---|---|
+| `groundedness` | 0.833 | 0.768 | 0.812 | **0.875** | 0.875 | 0.868 |
+| `citation_validity` | 1.000 | 1.000 | 0.979 | **1.000** | 1.000 | 1.000 |
+| `factuality` | 0.870 | 0.778 | 0.800 | 0.771 | **0.889** | 0.852 |
+
+**The incident factuality regression closed.** It sat at 0.771-0.800 for three runs and
+reads 0.889 / 0.852 across runs 5 and 6, back above the 0.870 baseline. Nothing in those
+runs targeted factuality: the changes were the async conversion and the two hang fixes.
+The most likely explanation is that the merge fix from run 4 needed a second look and the
+0.771 reading was the low end of its spread, which the noise-floor note below anticipated.
+The honest summary is that it is no longer a regression, not that it was fixed on purpose.
+
+Latency is deliberately absent from this table. Runs 5 and 6 were taken on a different day
+from runs 1-4, and the section above shows that makes the numbers incomparable.
 
 ### Reading these deltas: the noise floor
 
@@ -166,15 +290,27 @@ Incident `factuality` across them reads **0.778 / 0.800 / 0.771**, a spread of ~
 - The incidents preload "recovering" factuality (0.778 → 0.800) was **noise**, and was
   over-read at the time.
 - The merge fix "hurting" factuality (0.800 → 0.771) is **also noise**.
-- The ~0.09 gap from baseline is roughly 3x that spread, so the regression is real and has
-  been stable since the runbook refactor, unmoved by either subsequent fix.
+- The ~0.09 gap from baseline is roughly 3x that spread, so at the time it read as a real
+  regression, stable since the runbook refactor and unmoved by either subsequent fix.
 
 `groundedness` on incidents climbed 0.768 → 0.812 → **0.875**, a monotonic 0.107 that sits
 well outside the noise band and now exceeds the 0.833 baseline. `citation_validity`
 returned to a clean 1.000. Those two are genuine wins.
 
-Caveat: baseline is a single run, so its own variance is unknown. The true factuality gap
-could be anywhere in ~0.06-0.12.
+**Runs 5 and 6 then falsified the factuality conclusion.** Incident factuality read 0.889
+and 0.852, so the six-run series is 0.870 / 0.778 / 0.800 / 0.771 / 0.889 / 0.852 and the
+true spread is ~0.11, nearly four times the ~0.03 estimated from three runs. Three runs
+were not enough to bound it, and the "3x the spread, therefore real" inference inherited
+that error. Two lessons, both about method rather than the agent:
+
+- A spread estimated from three samples is itself a small-sample estimate. Treating it as
+  a fixed noise floor and then reasoning in multiples of it compounds the uncertainty
+  instead of controlling for it.
+- The runs that overturned this were not investigating factuality at all. Keeping every
+  evaluator in the report, rather than only the metric under active work, is what made the
+  correction visible.
+
+Caveat that still stands: baseline is a single run, so its own variance is unknown.
 
 ### Why grounding and factuality moved in opposite directions
 
@@ -254,7 +390,9 @@ were initially misattributed to the refactor.
 
 ## 8. Mistakes worth recording
 
-Three predictions were wrong, each caught by measurement rather than review:
+Three predictions were wrong, each caught by measurement rather than review. The two
+method mistakes below them cost more than any of the three, because they shaped how every
+other number here was read:
 
 1. **"Redundant embedding calls are the bottleneck."** Real cost: ~0.2s, and only on
    ADR-by-id queries. The supersession cache was already avoiding most of them.
@@ -272,6 +410,14 @@ Two further notes:
   complete, authoritative list ... plus the most recent incidents" and instructs the model
   to say when a service has no prior incidents. "Complete" is false for a capped incident
   list, and the combination encourages the denial behaviour seen in section 7.
+- **A three-run noise floor was treated as a measured constant.** It put incident
+  factuality's spread at ~0.03; six runs put it at ~0.11. Every "outside the noise band"
+  claim built on the first number carried its error forward, and one of them, the standing
+  factuality regression, did not survive. Small-sample variance estimates are themselves
+  small-sample estimates.
+- **Latency was compared across days.** Runs 5 and 6 looked like a 40% regression until a
+  same-session A/B showed the unmodified code had slowed by the same amount. Any wall
+  clock wrapped around a hosted model is only comparable within one session.
 
 ## 9. Open items
 
@@ -294,12 +440,15 @@ Still open:
 
 | item | why |
 |---|---|
-| Re-run the eval | The three fixes above are probe-verified only |
 | Fix triage `out_of_scope` misclassification | Declines legitimate incident questions outright; `routing_accuracy` on incidents sits at 0.815 |
 | Render `node` progress events in the UI | TTFT is 8.29s of a 10.17s turn; the events are already on the wire and discarded |
 | Extend the catalog preload to `general_agent` | Now the slowest node at 6.90s, same SQL tools, same discover-by-round-trip cost |
-| Re-run baseline once for its variance | Baseline is a single run, so the size of the factuality gap is only known to ~±0.03 |
+| Re-run baseline once for its variance | Baseline is a single run, and the six-run series shows incident factuality spreads ~0.11, so no single-run comparison against it is safe |
 | Report token and cost totals | `summarize_results` emits zeros; the README claims cost is surfaced |
+| Re-measure the latency headline in one session | The 19.3s → 9.6s figures come from runs taken days apart, which section 5 shows is not a clean comparison |
+
+Closed since: the eval was re-run twice (runs 5 and 6), which covered the three prompt
+fixes above and closed the incident-factuality regression.
 
 ## 10. Reproducing
 

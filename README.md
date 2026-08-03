@@ -83,6 +83,19 @@ The fictional company **PayLane** (a payments-processing SaaS) is the data domai
 
 Source: [src/agent.py](src/agent.py), helpers in [src/incident_workflow.py](src/incident_workflow.py).
 
+The same topology as LangGraph renders it, which is the authoritative view since it is
+drawn from the compiled graph rather than maintained by hand:
+
+![Compiled LangGraph topology](architecture_graph.png)
+
+Regenerate it after any change to the graph's nodes or edges:
+
+```python
+from src.agent import create_enterprise_copilot
+png = create_enterprise_copilot().get_graph().draw_mermaid_png()
+open("architecture_graph.png", "wb").write(png)
+```
+
 ---
 
 ## Guardrails
@@ -208,6 +221,7 @@ Optional path overrides (rarely needed; tests use these):
 | `EAC_CHROMA_DIR` | `<repo>/chroma_db` |
 | `EAC_GENERATION_MODEL` | `gpt-4o` (used by `scripts/generate_corpus.py`) |
 | `EAC_EVAL_QUICK` | unset (set to `1` for CI-friendly subset eval) |
+| `EAC_EVAL_UPLOAD` | `1` (set to `0` to run the eval without uploading traces to LangSmith) |
 | `EAC_EVAL_MIN_SCORE` | `0.5` (per-evaluator floor for eval acceptance) |
 | `EAC_EVAL_RETRIEVAL_MIN` | `0.6` (floor for `retrieval_recall` mean) |
 | `EAC_EVAL_CITATION_MIN` | `0.8` (floor for `citation_validity` mean when any answer cites) |
@@ -241,6 +255,7 @@ API service tuning:
 | `EAC_RUNBOOK_MAX_QUERIES` | `3` | Max documentation searches the runbook planner may request per turn (run in parallel) |
 | `EAC_RUNBOOK_MAX_BLOCKS` | `6` | Max retrieved document blocks handed to the synthesis step |
 | `EAC_RUNBOOK_MAX_CHARS` | `8000` | Size budget for the merged document set handed to the synthesis step |
+| `EAC_LLM_TIMEOUT_SECONDS` | `60` | Per-request deadline for an LLM call, so a dead connection raises and retries instead of hanging forever |
 
 ---
 
