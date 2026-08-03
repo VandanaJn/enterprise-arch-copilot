@@ -14,6 +14,10 @@ Quick mode (`EAC_EVAL_QUICK=1`) runs 2 examples per category with the free
 deterministic evaluators only, for fast CI parity. Full local runs cost a few
 dollars in OpenAI credits.
 
+`EAC_EVAL_UPLOAD=0` runs the eval without uploading traces, for when the
+LangSmith account is near its monthly trace limit. The scores and the JSON report
+are identical; only the LangSmith experiment view is given up.
+
 Requires: OPENAI_API_KEY, LANGSMITH_API_KEY, engineering_data.db, and chroma_db/.
 """
 
@@ -21,6 +25,8 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -31,7 +37,7 @@ from langsmith.utils import LangSmithNotFoundError
 from src import config
 
 # .env is loaded in tests/conftest.py before this module is imported.
-from src.agent import create_enterprise_copilot
+from src.agent import create_enterprise_copilot, invoke_sync
 from src.citations import extract_retrieved_sources
 from tests.eval.evaluators import ALL_EVALUATORS, DETERMINISTIC_EVALUATORS
 from tests.eval.run_report import format_summary, summarize_results, write_report
@@ -97,10 +103,34 @@ def _use_real_corpus():
 # --- Target function ----------------------------------------------------------
 
 
+_graphs = threading.local()
+
+
+def _graph_for_this_thread():
+    """One graph per worker thread, built once and reused for every example.
+
+    Building it per example meant a new `ChatOpenAI`, and so a new HTTP connection
+    pool, 103 times over, none of them ever closed. Reuse keeps one pool per
+    thread and cuts the per-example setup entirely.
+
+    Per *thread* rather than one shared graph because `invoke_sync` drives a
+    separate event loop on each thread, and an async HTTP client's pooled
+    connections belong to the loop that opened them.
+    """
+    graph = getattr(_graphs, "graph", None)
+    if graph is None:
+        graph = create_enterprise_copilot()
+        _graphs.graph = graph
+    return graph
+
+
 @traceable(name="eac_copilot_eval_target", run_type="chain")
 def copilot_target(inputs: dict) -> dict:
-    graph = create_enterprise_copilot()
-    result = graph.invoke({"messages": [HumanMessage(content=inputs["question"])]})
+    # The graph is async-only; `evaluate()` calls this target synchronously.
+    graph = _graph_for_this_thread()
+    started = time.perf_counter()
+    result = invoke_sync(graph, {"messages": [HumanMessage(content=inputs["question"])]})
+    elapsed = time.perf_counter() - started
     return {
         "output": result["messages"][-1].content,
         # Doc-ID stems the agent actually retrieved, letting retrieval_recall/precision
@@ -109,6 +139,10 @@ def copilot_target(inputs: dict) -> dict:
         # The route triage chose, so routing_accuracy can grade it against the
         # example's category. invoke() returns the full final state incl. mode.
         "mode": result.get("mode", ""),
+        # Timed here rather than read off the LangSmith run, so the report keeps its
+        # latency percentiles when tracing is disabled. Covers the graph call only,
+        # which is the number the percentiles are meant to describe.
+        "latency_s": elapsed,
     }
 
 
@@ -222,6 +256,13 @@ def test_langsmith_evaluate_copilot(persistent_dataset: str):
     if sha := os.getenv("GITHUB_SHA"):
         metadata["github_sha"] = sha
 
+    # EAC_EVAL_UPLOAD=0 runs the identical eval without sending traces to
+    # LangSmith, for when the account is near its monthly trace limit. Scores,
+    # latency, and the JSON report are unaffected because they are computed from
+    # the rows `evaluate()` returns in-process; what is lost is the experiment in
+    # the LangSmith UI and any cross-run comparison done there.
+    upload_results = os.getenv("EAC_EVAL_UPLOAD", "1") != "0"
+
     results = evaluate(
         copilot_target,
         data=persistent_dataset,
@@ -230,6 +271,7 @@ def test_langsmith_evaluate_copilot(persistent_dataset: str):
         description="Enterprise Architecture Copilot evaluation run",
         metadata=metadata,
         max_concurrency=2,
+        upload_results=upload_results,
     )
 
     summary = summarize_results(results)
