@@ -11,12 +11,14 @@ Pure: the search callable is injected, so no vector store and no LLM.
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 
 import pytest
 
 from src.agent import (
+    _asearch_docs_parallel,
     _doc_tool_messages,
     _fallback_doc_queries,
     _merge_doc_results,
@@ -213,6 +215,68 @@ def test_search_docs_parallel_survives_one_failing_search():
 
 def test_search_docs_parallel_no_queries():
     assert _search_docs_parallel([], search=lambda q: "x") == []
+
+
+# --- async parallel execution ------------------------------------------------
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.mark.anyio
+async def test_asearch_docs_parallel_preserves_query_order():
+    async def fake(query: str) -> str:
+        return f"result-{query}"
+
+    assert await _asearch_docs_parallel(["a", "b", "c"], search=fake) == [
+        "result-a",
+        "result-b",
+        "result-c",
+    ]
+
+
+@pytest.mark.anyio
+async def test_asearch_docs_parallel_overlaps_without_blocking_the_loop():
+    running = 0
+    peak = 0
+
+    async def slow(query: str) -> str:
+        nonlocal running, peak
+        running += 1
+        peak = max(peak, running)
+        await asyncio.sleep(0.05)
+        running -= 1
+        return query
+
+    began = time.perf_counter()
+    assert await _asearch_docs_parallel(["a", "b", "c"], search=slow) == ["a", "b", "c"]
+    elapsed = time.perf_counter() - began
+
+    assert peak == 3  # all three in flight at once
+    assert elapsed < 0.12  # concurrent, not 3 x 0.05 serial
+
+
+@pytest.mark.anyio
+async def test_asearch_docs_parallel_survives_one_failing_search():
+    async def flaky(query: str) -> str:
+        if query == "b":
+            raise RuntimeError("chroma down")
+        return f"ok-{query}"
+
+    results = await _asearch_docs_parallel(["a", "b", "c"], search=flaky)
+    assert results[0] == "ok-a"
+    assert results[2] == "ok-c"
+    assert "chroma down" in results[1]
+
+
+@pytest.mark.anyio
+async def test_asearch_docs_parallel_no_queries():
+    async def fake(query: str) -> str:
+        return "x"
+
+    assert await _asearch_docs_parallel([], search=fake) == []
 
 
 # --- planner fallback --------------------------------------------------------

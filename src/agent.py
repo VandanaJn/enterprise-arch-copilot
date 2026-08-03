@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import sqlite3
@@ -271,15 +272,29 @@ def detect_prompt_injection(text: str) -> tuple[bool, float]:
         return False, 0.0
 
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=8),
-    retry=retry_if_not_exception_type((KeyboardInterrupt, SystemExit)),
-    reraise=True,
-)
+_RETRY_POLICY = {
+    "stop": stop_after_attempt(3),
+    "wait": wait_exponential(multiplier=1, min=1, max=8),
+    "retry": retry_if_not_exception_type((KeyboardInterrupt, SystemExit)),
+    "reraise": True,
+}
+
+
+@retry(**_RETRY_POLICY)
 def _invoke_with_retry(runnable, inputs):
     """Wrap an LLM/runnable invocation with bounded retry for transient errors."""
     return runnable.invoke(inputs)
+
+
+@retry(**_RETRY_POLICY)
+async def _ainvoke_with_retry(runnable, inputs):
+    """Async twin of `_invoke_with_retry`; tenacity awaits a coroutine function.
+
+    The graph nodes are async so an LLM round trip, which is where the seconds
+    are, yields the event loop instead of holding a worker thread. Both share
+    `_RETRY_POLICY` so the sync and async paths cannot drift apart.
+    """
+    return await runnable.ainvoke(inputs)
 
 
 # Bounds the extra vector-store calls one docs search can trigger, and how far a
@@ -595,6 +610,28 @@ def _search_docs_parallel(queries: Sequence[str], search=None) -> list[str]:
         return list(pool.map(_one, queries))
 
 
+async def _asearch_docs_parallel(queries: Sequence[str], search=None) -> list[str]:
+    """Async twin of `_search_docs_parallel`, for the async graph nodes.
+
+    Chroma has no native async client: `asimilarity_search` is a thread shim in
+    langchain-core's base class. Awaiting it is still the right call, because the
+    shim yields the event loop while the worker thread runs, where a direct sync
+    call from an async node would block every other in-flight request.
+    """
+    if not queries:
+        return []
+    run = search or (lambda q: search_engineering_docs.ainvoke({"query": q}))
+
+    async def _one(query: str) -> str:
+        try:
+            return await run(query)
+        except Exception as exc:
+            logger.exception("Doc search failed for %r", query)
+            return f"Search failed for this query ({exc})."
+
+    return list(await asyncio.gather(*(_one(q) for q in queries)))
+
+
 def _doc_tool_messages(queries: Sequence[str], results: Sequence[str]) -> list:
     """One AIMessage announcing the searches, plus a ToolMessage per result.
 
@@ -836,6 +873,53 @@ DECLINE_MESSAGE = (
 )
 
 
+_sync_bridge = threading.local()
+
+
+def _bridge_event_loop() -> asyncio.AbstractEventLoop:
+    """Return this thread's dedicated event loop, creating it on first use.
+
+    The loop is deliberately kept open for the life of the thread. `asyncio.run`
+    closes the loop it creates, and on Windows that runs `IocpProactor.close()`,
+    which polls until every outstanding overlapped read completes. The pooled
+    HTTP sockets inside `ChatOpenAI` are never explicitly closed, so their reads
+    stay outstanding after the peer hangs up and that poll blocks forever. One
+    reused loop skips the teardown path entirely, and stops rebuilding a loop and
+    its client connections once per call.
+    """
+    loop = getattr(_sync_bridge, "loop", None)
+    if loop is None or loop.is_closed():
+        loop = asyncio.new_event_loop()
+        # Libraries that call bare `get_event_loop()` must find this same loop.
+        asyncio.set_event_loop(loop)
+        _sync_bridge.loop = loop
+    return loop
+
+
+def invoke_sync(graph, inputs, config=None):
+    """Run the graph to completion from synchronous code.
+
+    The graph's nodes are `async def`, so LangGraph refuses a plain `.invoke()`
+    ("No synchronous function provided"). Synchronous callers that cannot be made
+    async, notably `langsmith.evaluate()`'s target and one-shot scripts, go
+    through here. Anything already inside an event loop (the FastAPI app, the CLI)
+    must await `ainvoke`/`astream` directly.
+
+    Safe to call from several threads at once, as `langsmith.evaluate()` does:
+    each thread drives its own loop.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass  # No loop on this thread, which is the case this bridge is for.
+    else:
+        raise RuntimeError(
+            "invoke_sync() cannot be called from a thread with a running event loop. "
+            "Await graph.ainvoke(...) or graph.astream(...) directly instead."
+        )
+    return _bridge_event_loop().run_until_complete(graph.ainvoke(inputs, config))
+
+
 class AgentState(TypedDict):
     # add_messages (not operator.add) dedupes by message id, so a subgraph that
     # echoes prior messages doesn't duplicate them, and a checkpointer can persist
@@ -880,7 +964,14 @@ def create_enterprise_copilot(checkpointer=None):
     config.context_edit_*. The hand-written triage/synthesize nodes are plain LLM
     calls and continue to bound history with trim_history.
     """
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    # timeout is not optional: without a deadline a dead socket produces an await
+    # that never resolves, which no retry policy can rescue because no exception is
+    # ever raised. With one, `_ainvoke_with_retry` gets an error it can retry.
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0,
+        timeout=config.llm_timeout_seconds(),
+    )
     triage_llm = llm.with_structured_output(TriageResult)
 
     all_tools = [search_engineering_docs, query_sql_database, list_all_services, query_incidents]
@@ -916,7 +1007,7 @@ def create_enterprise_copilot(checkpointer=None):
     # call, runs them in parallel, and hands the retrieved text to `synthesize`.
     runbook_planner_llm = llm.with_structured_output(DocQueryPlan)
 
-    def validate_input_node(state: AgentState):
+    async def validate_input_node(state: AgentState):
         text = latest_user_text(state["messages"])
         stripped = text.strip()
         cap = config.max_input_chars()
@@ -947,9 +1038,11 @@ def create_enterprise_copilot(checkpointer=None):
             "runbook_findings": "",
         }
 
-    def prompt_injection_check_node(state: AgentState):
+    async def prompt_injection_check_node(state: AgentState):
         text = latest_user_text(state["messages"])
-        is_injection, score = detect_prompt_injection(text)
+        # DeBERTa inference is CPU-bound (~60ms). Run it in a thread: awaiting it
+        # inline would block every other in-flight request for that whole time.
+        is_injection, score = await asyncio.to_thread(detect_prompt_injection, text)
         if is_injection:
             logger.warning("Blocked likely prompt injection (score=%.3f)", score)
             return {
@@ -958,24 +1051,24 @@ def create_enterprise_copilot(checkpointer=None):
             }
         return {}
 
-    def decline_node(state: AgentState):
+    async def decline_node(state: AgentState):
         # No LLM, no tools — deterministic short-circuit for rejected or out-of-scope inputs.
         if state.get("mode") == "rejected":
             return {}
         return {"messages": [AIMessage(content=DECLINE_MESSAGE)]}
 
-    def triage_node(state: AgentState):
+    async def triage_node(state: AgentState):
         try:
             history = trim_history(state["messages"], config.history_max_messages())
             triage_messages = [TRIAGE_SYSTEM_PROMPT, *history]
-            res = _invoke_with_retry(triage_llm, triage_messages)
+            res = await _ainvoke_with_retry(triage_llm, triage_messages)
             tr = res if isinstance(res, TriageResult) else TriageResult(mode="general")
         except Exception:
             logger.exception("Triage LLM failed; defaulting to general mode")
             tr = TriageResult(mode="general")
         return {"mode": tr.mode, "triage": tr.model_dump()}
 
-    def structured_agent_node(state: AgentState):
+    async def structured_agent_node(state: AgentState):
         prompt = _build_incident_prompt(
             "Incident metadata lookup.",
             latest_user_text(state["messages"]),
@@ -988,11 +1081,11 @@ def create_enterprise_copilot(checkpointer=None):
                 "the affected service has prior incidents."
             ),
         )
-        out = structured_agent.invoke({"messages": [HumanMessage(content=prompt)]})
+        out = await structured_agent.ainvoke({"messages": [HumanMessage(content=prompt)]})
         findings = extract_final_assistant_text(out["messages"]) or "(no structured findings)"
         return {"messages": out["messages"], "structured_findings": findings}
 
-    def runbook_agent_node(state: AgentState):
+    async def runbook_agent_node(state: AgentState):
         triage = state.get("triage") or {}
         user_text = latest_user_text(state["messages"])
         prompt = _build_incident_prompt(
@@ -1003,7 +1096,7 @@ def create_enterprise_copilot(checkpointer=None):
             tail="Return the search queries only. Do not answer the question.",
         )
         try:
-            plan = _invoke_with_retry(
+            plan = await _ainvoke_with_retry(
                 runbook_planner_llm, [RUNBOOK_PLANNER_PROMPT, HumanMessage(content=prompt)]
             )
             queries = list(plan.queries) if isinstance(plan, DocQueryPlan) else []
@@ -1022,14 +1115,14 @@ def create_enterprise_copilot(checkpointer=None):
         if not queries:
             queries = _fallback_doc_queries(triage, user_text)
 
-        results = _search_docs_parallel(queries)
+        results = await _asearch_docs_parallel(queries)
         findings = _merge_doc_results(results) or "(no runbook snippets)"
         return {
             "messages": _doc_tool_messages(queries, results),
             "runbook_findings": findings,
         }
 
-    def synthesize_node(state: AgentState):
+    async def synthesize_node(state: AgentState):
         human = HumanMessage(
             content=(
                 f"User question:\n{latest_user_text(state['messages'])}\n\n"
@@ -1037,12 +1130,12 @@ def create_enterprise_copilot(checkpointer=None):
                 f"---\nRetrieved documents:\n{state.get('runbook_findings') or ''}"
             )
         )
-        resp = _invoke_with_retry(llm, [SYNTHESIZE_SYSTEM_PROMPT, human])
+        resp = await _ainvoke_with_retry(llm, [SYNTHESIZE_SYSTEM_PROMPT, human])
         return {"messages": [resp]}
 
-    def general_agent_node(state: AgentState):
+    async def general_agent_node(state: AgentState):
         history = trim_history(state["messages"], config.history_max_messages())
-        return general_agent.invoke({**state, "messages": history})
+        return await general_agent.ainvoke({**state, "messages": history})
 
     builder = StateGraph(AgentState)
     builder.add_node("validate_input", validate_input_node)

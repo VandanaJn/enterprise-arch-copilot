@@ -161,3 +161,15 @@ def catalog_ttl_seconds() -> int:
     0 (or negative) caches for the process lifetime.
     """
     return int(os.environ.get("EAC_CATALOG_TTL_SECONDS", "300"))
+
+
+def llm_timeout_seconds() -> float:
+    """Per-request deadline for an LLM call, so no await can hang forever.
+
+    Without this an OpenAI call has no deadline: if the socket dies without the
+    peer sending anything, the read never completes and the request waits
+    forever. That is what wedged a full eval run. A deadline turns it into an
+    exception `_ainvoke_with_retry` can retry. The slowest observed single call
+    is ~11s, so 60s only fires on a genuinely broken connection.
+    """
+    return float(os.environ.get("EAC_LLM_TIMEOUT_SECONDS", "60"))
