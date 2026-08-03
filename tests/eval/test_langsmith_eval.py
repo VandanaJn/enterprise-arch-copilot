@@ -26,6 +26,7 @@ from pathlib import Path
 import pytest
 from langchain_core.messages import HumanMessage
 from langsmith import Client, evaluate, traceable
+from langsmith.utils import LangSmithNotFoundError
 
 from src import config
 
@@ -161,10 +162,21 @@ def persistent_dataset() -> str:
     # Create the dataset if it doesn't exist; otherwise wipe and re-seed examples.
     try:
         existing = client.read_dataset(dataset_name=DATASET_NAME)
-        # Refresh examples to match the local JSON. Cheaper than diffing per-row.
-        for ex in client.list_examples(dataset_id=existing.id):
-            client.delete_example(ex.id)
-    except Exception:
+        # Materialize the ids before deleting any of them. `list_examples` is a
+        # lazily paginated generator, so deleting while iterating shifts the
+        # server-side offsets and the next page skips rows. That left stale
+        # examples behind and silently ran 106 examples against a 103-row golden
+        # set, which quietly invalidates any before/after comparison.
+        stale_ids = [ex.id for ex in client.list_examples(dataset_id=existing.id)]
+        for example_id in stale_ids:
+            client.delete_example(example_id)
+        remaining = len(list(client.list_examples(dataset_id=existing.id)))
+        if remaining:
+            raise RuntimeError(
+                f"{remaining} example(s) survived the wipe of {DATASET_NAME}; "
+                "the run would grade a dataset that does not match golden_set.json"
+            )
+    except LangSmithNotFoundError:
         client.create_dataset(
             DATASET_NAME,
             description=(
@@ -177,6 +189,13 @@ def persistent_dataset() -> str:
         )
 
     client.create_examples(dataset_name=DATASET_NAME, examples=examples)
+
+    # The dataset the experiment grades must match the local golden set exactly,
+    # or the per-category means are not comparable across runs.
+    seeded = len(list(client.list_examples(dataset_name=DATASET_NAME)))
+    assert seeded == len(examples), (
+        f"{DATASET_NAME} has {seeded} examples but golden_set.json has {len(examples)}"
+    )
     return DATASET_NAME
 
 
