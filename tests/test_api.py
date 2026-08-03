@@ -24,6 +24,8 @@ from src.api.observability import (
     _histogram_quantile,
     metrics_summary,
     record_guardrail_outcome,
+    record_node_duration,
+    record_time_to_first_token,
 )
 from src.api.rate_limit import SlidingWindowLimiter
 from src.api.sse import (
@@ -168,6 +170,43 @@ async def test_stream_fires_on_complete_hook():
     assert seen["n"] >= 3
 
 
+@pytest.mark.anyio
+async def test_stream_times_each_node_it_completes():
+    seen: list[tuple[str, float]] = []
+    agent = FakeAgent(_canned_events())
+    await _collect(
+        chat_event_stream(agent, "q", "t-1", {}, on_node_complete=lambda n, s: seen.append((n, s)))
+    )
+
+    assert [name for name, _ in seen] == [
+        "validate_input",
+        "triage",
+        "structured_agent",
+        "synthesize",
+    ]
+    assert all(seconds >= 0 for _, seconds in seen)
+
+
+@pytest.mark.anyio
+async def test_stream_reports_time_to_first_token_once():
+    seen: list[float] = []
+    agent = FakeAgent(_canned_events())
+    await _collect(chat_event_stream(agent, "q", "t-1", {}, on_first_token=seen.append))
+
+    # Two user-facing token chunks ("Fin", "al"), but TTFT is a single observation.
+    assert len(seen) == 1
+    assert seen[0] >= 0
+
+
+@pytest.mark.anyio
+async def test_stream_skips_time_to_first_token_when_nothing_streams():
+    # A declined turn emits no user-facing tokens, so there is no TTFT to record.
+    seen: list[float] = []
+    agent = FakeAgent([("updates", {"decline_node": {"mode": "out_of_scope"}})])
+    await _collect(chat_event_stream(agent, "q", "t-1", {}, on_first_token=seen.append))
+    assert seen == []
+
+
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
@@ -250,10 +289,40 @@ def test_histogram_quantile_empty_is_none():
 
 def test_metrics_summary_shape():
     summary = metrics_summary()
-    assert set(summary) == {"requests", "chat_latency", "overall_latency", "guardrail_blocks"}
+    assert set(summary) == {
+        "requests",
+        "chat_latency",
+        "overall_latency",
+        "node_latency",
+        "time_to_first_token",
+        "guardrail_blocks",
+    }
     assert isinstance(summary["requests"]["total"], int)
     assert isinstance(summary["requests"]["by_endpoint"], list)
     assert isinstance(summary["guardrail_blocks"], dict)
+
+
+def test_node_latency_ranks_the_slowest_node_first():
+    # The point of the section: read the top row to see where a turn spends its time.
+    record_node_duration("triage", 1.0)
+    record_node_duration("runbook_agent", 5.0)
+    record_node_duration("runbook_agent", 7.0)
+
+    rows = {r["node"]: r for r in metrics_summary()["node_latency"]}
+    assert rows["runbook_agent"]["count"] == 2
+    assert rows["runbook_agent"]["avg_seconds"] == pytest.approx(6.0)
+    assert rows["runbook_agent"]["total_seconds"] == pytest.approx(12.0)
+
+    ordered = [r["node"] for r in metrics_summary()["node_latency"]]
+    assert ordered.index("runbook_agent") < ordered.index("triage")
+
+
+def test_time_to_first_token_summary_reports_percentiles():
+    record_time_to_first_token(2.0)
+    ttft = metrics_summary()["time_to_first_token"]
+    assert ttft["count"] >= 1
+    assert ttft["avg_seconds"] > 0
+    assert ttft["p95_seconds"] is not None
 
 
 # --- HTTP surface (TestClient, no LLM) ---------------------------------------------
@@ -325,7 +394,14 @@ def test_metrics_summary_endpoint(client):
     resp = client.get("/metrics/summary")
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body) == {"requests", "chat_latency", "overall_latency", "guardrail_blocks"}
+    assert set(body) == {
+        "requests",
+        "chat_latency",
+        "overall_latency",
+        "node_latency",
+        "time_to_first_token",
+        "guardrail_blocks",
+    }
     assert body["requests"]["total"] >= 1
 
 

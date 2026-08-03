@@ -25,6 +25,8 @@ from src.api.observability import (
     configure_json_logging,
     metrics_summary,
     record_guardrail_outcome,
+    record_node_duration,
+    record_time_to_first_token,
     setup_metrics,
 )
 from src.api.rate_limit import SlidingWindowLimiter
@@ -117,6 +119,8 @@ def create_app() -> FastAPI:
             run_config,
             on_complete=record_guardrail_outcome,
             run_id=str(run_id) if config.debug_mode() else None,
+            on_node_complete=record_node_duration,
+            on_first_token=record_time_to_first_token,
         )
         # sep="\n": sse-starlette defaults to "\r\n", which ends frames with
         # "\r\n\r\n" and so contains no blank "\n\n" line for a client that splits
