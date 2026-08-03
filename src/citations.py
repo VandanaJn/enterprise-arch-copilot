@@ -49,6 +49,31 @@ def format_doc_result(
     return "\n".join(lines)
 
 
+def split_doc_blocks(tool_output: str) -> list[str]:
+    """Split one `search_engineering_docs` result into its per-document blocks.
+
+    Lives here, next to `format_doc_result`, so the split and the format cannot
+    drift apart. Text with no document header (an error string, or "No relevant
+    documentation found.") yields no blocks.
+    """
+    starts = [m.start() for m in _SOURCE_HEADER_RE.finditer(tool_output or "")]
+    if not starts:
+        return []
+    bounds = starts + [len(tool_output)]
+    return [tool_output[a:b].strip() for a, b in zip(bounds, bounds[1:], strict=False)]
+
+
+def doc_block_source(block: str) -> str:
+    """Source stem of one document block, or "" if it has no header."""
+    match = _SOURCE_HEADER_RE.search(block or "")
+    return source_stem(match.group(1)) if match else ""
+
+
+def renumber_doc_block(block: str, n: int) -> str:
+    """Rewrite a block's `Document N` index, for merging results from several queries."""
+    return re.sub(r"^--- Document \d+ ", f"--- Document {n} ", block, count=1)
+
+
 def extract_cited_sources(answer_text: str) -> list[str]:
     """Doc-ID stems the answer cites inline (e.g. [001-checkout-504-mitigation]).
 

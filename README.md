@@ -61,17 +61,20 @@ The fictional company **PayLane** (a payments-processing SaaS) is the data domai
                ▼                        ▼
    ┌───────────────────┐    ┌───────────────────────┐
    │  structured_agent │    │    general_agent       │
-   │  (SQL tools only) │    │  (all 4 tools,         │
-   └────────┬──────────┘    │   ReAct loop)          │
-            ▼               └────────────┬───────────┘
+   │  (SQL tools, with │    │  (all 4 tools,         │
+   │   catalog preload)│    │   ReAct loop)          │
+   └────────┬──────────┘    └────────────┬───────────┘
+            ▼                            │
    ┌───────────────────┐                 │
    │   runbook_agent   │                 │
-   │  (vector search)  │                 │
+   │ plan queries once │                 │
+   │ → parallel search │                 │
    └────────┬──────────┘                 │
             ▼                            │
    ┌───────────────────┐                 │
    │    synthesize     │                 │
-   │  (incident brief) │                 │
+   │  (incident brief, │                 │
+   │   reads the docs) │                 │
    └────────┬──────────┘                 │
             └───────────────┬────────────┘
                             ▼
@@ -79,6 +82,19 @@ The fictional company **PayLane** (a payments-processing SaaS) is the data domai
 ```
 
 Source: [src/agent.py](src/agent.py), helpers in [src/incident_workflow.py](src/incident_workflow.py).
+
+The same topology as LangGraph renders it, which is the authoritative view since it is
+drawn from the compiled graph rather than maintained by hand:
+
+![Compiled LangGraph topology](architecture_graph.png)
+
+Regenerate it after any change to the graph's nodes or edges:
+
+```python
+from src.agent import create_enterprise_copilot
+png = create_enterprise_copilot().get_graph().draw_mermaid_png()
+open("architecture_graph.png", "wb").write(png)
+```
 
 ---
 
@@ -205,6 +221,7 @@ Optional path overrides (rarely needed; tests use these):
 | `EAC_CHROMA_DIR` | `<repo>/chroma_db` |
 | `EAC_GENERATION_MODEL` | `gpt-4o` (used by `scripts/generate_corpus.py`) |
 | `EAC_EVAL_QUICK` | unset (set to `1` for CI-friendly subset eval) |
+| `EAC_EVAL_UPLOAD` | `1` (set to `0` to run the eval without uploading traces to LangSmith) |
 | `EAC_EVAL_MIN_SCORE` | `0.5` (per-evaluator floor for eval acceptance) |
 | `EAC_EVAL_RETRIEVAL_MIN` | `0.6` (floor for `retrieval_recall` mean) |
 | `EAC_EVAL_CITATION_MIN` | `0.8` (floor for `citation_validity` mean when any answer cites) |
@@ -233,6 +250,12 @@ API service tuning:
 | `EAC_SUMMARIZATION_KEEP_MESSAGES` | `12` | Recent messages the summarizer preserves verbatim |
 | `EAC_CONTEXT_EDIT_TRIGGER_TOKENS` | `6000` | Token count at which incident sub-agents clear stale tool results |
 | `EAC_CONTEXT_EDIT_KEEP` | `3` | Most recent tool results kept intact when context editing fires |
+| `EAC_CATALOG_MAX_CHARS` | `12000` | Size budget for the preloaded catalog snapshot; above it the incident path falls back to the SQL tools (`0` disables the cap) |
+| `EAC_CATALOG_TTL_SECONDS` | `300` | How long the catalog snapshot is cached before re-reading SQLite (`0` caches for the process lifetime) |
+| `EAC_RUNBOOK_MAX_QUERIES` | `3` | Max documentation searches the runbook planner may request per turn (run in parallel) |
+| `EAC_RUNBOOK_MAX_BLOCKS` | `6` | Max retrieved document blocks handed to the synthesis step |
+| `EAC_RUNBOOK_MAX_CHARS` | `8000` | Size budget for the merged document set handed to the synthesis step |
+| `EAC_LLM_TIMEOUT_SECONDS` | `60` | Per-request deadline for an LLM call, so a dead connection raises and retries instead of hanging forever |
 
 ---
 
@@ -333,7 +356,7 @@ curl -N -X POST http://127.0.0.1:8000/chat \
   -d '{"message":"The /api/v1/checkout endpoint is throwing 504s. Who owns it and is there a runbook?"}'
 ```
 
-Endpoints: `POST /chat` (SSE; `{message, thread_id?}`, server mints a `thread_id` when omitted), `GET /threads/{id}/messages` (transcript for restore), `GET /healthz` (503 until the data files exist), `GET /metrics` (Prometheus), `GET /metrics/summary` (human-readable digest: request counts, `/chat` latency, percentiles, guardrail tallies), `GET /` (web chat UI).
+Endpoints: `POST /chat` (SSE; `{message, thread_id?}`, server mints a `thread_id` when omitted), `GET /threads/{id}/messages` (transcript for restore), `GET /healthz` (503 until the data files exist), `GET /metrics` (Prometheus), `GET /metrics/summary` (human-readable digest: request counts, `/chat` latency, percentiles, per-node latency, time to first token, guardrail tallies), `GET /` (web chat UI).
 
 **Docker** (CPU-only torch; data lives under `./data`, mounted read-only):
 
@@ -353,6 +376,15 @@ docker compose up               # serve on http://localhost:8000
 **LLM/agent traces**: when `LANGSMITH_API_KEY` and `LANGSMITH_TRACING=true` are set, LangChain/LangGraph auto-instrument every node, tool call, and token cost under the project named by `LANGSMITH_PROJECT`. With `EAC_DEBUG=1` the API also returns the LangSmith `run_id` in the SSE `done` event.
 
 **Service layer**: the API emits structured JSON access logs with a per-request id, exposes Prometheus metrics at `/metrics` (latency histograms, request/error counts), and increments an `eac_guardrail_blocks_total` counter labeled by which guardrail fired (`input-validation`, `prompt-injection`, `readonly-sql`, `out-of-scope`). That counter is the production-side mirror of the offline red-team suite. The boundary is deliberate: LangSmith owns the LLM traces, the service owns logs and metrics; no OTel collector or Grafana stack for a single-container demo.
+
+**Latency attribution**: the incident path is a serial chain of LLM round trips, so a total is not actionable on its own. `eac_node_duration_seconds{node}` times each graph node and `eac_time_to_first_token_seconds` records the latency the user actually feels; `/metrics/summary` folds both into a `node_latency` list sorted slowest-average-first and a `time_to_first_token` digest. Both are measured at the SSE stream boundary (LangGraph emits an `updates` payload as each node finishes), so `src/agent.py` stays free of metrics imports.
+
+```bash
+curl -s localhost:8000/metrics/summary | python -m json.tool
+# "node_latency": [{"node": "general_agent", "count": 2, "avg_seconds": 6.90, "total_seconds": 13.81}, ...]
+```
+
+These metrics drove a latency pass that cut `/chat` from 18.9s to 10.2s (eval p95 19.3s to 10.5s). [PERFORMANCE.md](PERFORMANCE.md) records the measurements, the before/after comparison, the bugs the eval exposed, and the predictions that turned out to be wrong; the decisions themselves are in [DECISIONS.md](DECISIONS.md).
 
 ---
 

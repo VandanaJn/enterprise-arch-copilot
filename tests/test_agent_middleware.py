@@ -2,8 +2,11 @@
 
 These do not call any LLM or need a corpus: `create_agent` is patched so we can
 assert which middleware each ReAct agent is constructed with. The `general_agent`
-(all tools) summarizes history; the two incident sub-agents clear stale tool
-results. See create_enterprise_copilot in src/agent.py.
+(all tools) summarizes history; `structured_agent` clears stale tool results.
+
+There are two ReAct agents, not three: the runbook step is a query planner plus a
+parallel search, with no tool-calling loop to manage. See create_enterprise_copilot
+in src/agent.py.
 """
 
 from unittest.mock import MagicMock, patch
@@ -28,12 +31,14 @@ def captured_agents(monkeypatch):
     with patch.object(agent_mod, "create_agent", fake_create_agent):
         agent_mod.create_enterprise_copilot()
 
-    # tool counts are distinct: general=4, structured(sql)=3, runbook(docs)=1
+    # tool counts are distinct: general=4, structured(sql)=3
     return {len(c["tools"]): c["middleware"] for c in calls}
 
 
-def test_three_react_agents_are_built(captured_agents):
-    assert set(captured_agents) == {4, 3, 1}
+def test_only_the_tool_calling_steps_are_react_agents(captured_agents):
+    # The runbook step plans its searches in one structured call and runs them
+    # directly, so it needs no agent loop and builds no third agent.
+    assert set(captured_agents) == {4, 3}
 
 
 def test_general_agent_uses_summarization(captured_agents):
@@ -42,9 +47,8 @@ def test_general_agent_uses_summarization(captured_agents):
     assert isinstance(middleware[0], SummarizationMiddleware)
 
 
-@pytest.mark.parametrize("tool_count", [3, 1])
-def test_incident_subagents_use_context_editing(captured_agents, tool_count):
-    middleware = captured_agents[tool_count]
+def test_structured_agent_uses_context_editing(captured_agents):
+    middleware = captured_agents[3]
     assert len(middleware) == 1
     assert isinstance(middleware[0], ContextEditingMiddleware)
 

@@ -65,6 +65,49 @@ def test_summarize_results_tolerates_missing_fields():
     assert summary["per_evaluator_means"] == {}
 
 
+def test_latency_comes_from_the_target_when_it_reports_one():
+    """The target times itself so percentiles survive tracing being switched off.
+
+    The run timestamps here say 2s and the target says 5s; the target wins, because
+    with tracing disabled the timestamps are the ones that go missing.
+    """
+    row = _row("factual", {"keyword_coverage": 1.0}, 2.0, 100, 0.001)
+    row["run"].outputs = {"latency_s": 5.0}
+
+    summary = summarize_results([row])
+
+    assert summary["latency_p50_s"] == 5.0
+
+
+def test_latency_survives_missing_run_timestamps():
+    """What a tracing-disabled row looks like: outputs present, timestamps absent."""
+    row = _row("factual", {"keyword_coverage": 1.0}, 2.0, 100, 0.001)
+    row["run"].start_time = None
+    row["run"].end_time = None
+    row["run"].outputs = {"latency_s": 7.5}
+
+    summary = summarize_results([row])
+
+    assert summary["latency_p50_s"] == 7.5
+    assert summary["per_evaluator_means"]["keyword_coverage"] == 1.0
+
+
+def test_latency_falls_back_to_run_timestamps():
+    """Runs whose target reports no latency still aggregate off the timestamps."""
+    summary = summarize_results([_row("factual", {"keyword_coverage": 1.0}, 3.0, 100, 0.001)])
+    assert summary["latency_p50_s"] == 3.0
+
+
+def test_a_malformed_latency_does_not_break_the_report():
+    row = _row("factual", {"keyword_coverage": 1.0}, 2.0, 100, 0.001)
+    row["run"].outputs = {"latency_s": "not-a-number"}
+
+    summary = summarize_results([row])
+
+    # Falls back to the run timestamps rather than raising.
+    assert summary["latency_p50_s"] == 2.0
+
+
 def test_format_summary_renders_all_sections():
     text = format_summary(summarize_results(_synthetic_results()))
     for expected in ("Evaluation summary", "per evaluator", "per category", "keyword_coverage"):

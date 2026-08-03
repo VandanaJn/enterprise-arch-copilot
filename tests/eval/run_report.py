@@ -32,6 +32,27 @@ def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
 
+def _run_latency(run: Any) -> float | None:
+    """Seconds the target itself measured, read off the run's outputs.
+
+    `copilot_target` returns `latency_s` alongside its answer, so the number lives
+    in the outputs the SDK carries locally rather than in the run timestamps the
+    tracing machinery fills in. That is what keeps the percentiles working when
+    tracing is disabled. Read defensively: a run may have no outputs at all, and a
+    malformed value must not take down the report.
+    """
+    outputs = getattr(run, "outputs", None)
+    if not isinstance(outputs, dict):
+        return None
+    value = outputs.get("latency_s")
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def summarize_results(results: Any) -> dict:
     """Aggregate langsmith.evaluate() result rows into one report dict.
 
@@ -51,11 +72,21 @@ def summarize_results(results: Any) -> dict:
 
         run = row.get("run")
         if run is not None:
-            start, end = getattr(run, "start_time", None), getattr(run, "end_time", None)
-            if start and end:
-                latencies.append((end - start).total_seconds())
             total_tokens += int(getattr(run, "total_tokens", 0) or 0)
             total_cost += float(getattr(run, "total_cost", 0) or 0)
+
+        # Prefer the target's own measurement over the run timestamps, which the
+        # tracing machinery fills in and which therefore go missing when tracing is
+        # off. Fall back to the timestamps so runs whose target does not report a
+        # latency still aggregate.
+        if run is not None:
+            latency = _run_latency(run)
+            if latency is None:
+                start, end = getattr(run, "start_time", None), getattr(run, "end_time", None)
+                if start and end:
+                    latency = (end - start).total_seconds()
+            if latency is not None:
+                latencies.append(latency)
 
         example = row.get("example")
         metadata = getattr(example, "metadata", None) or {}

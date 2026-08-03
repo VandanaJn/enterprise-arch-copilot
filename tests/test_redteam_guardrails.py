@@ -22,7 +22,12 @@ import pytest
 from langchain_core.messages import HumanMessage
 
 from src import agent as agent_module
-from src.agent import _is_readonly_sql, create_enterprise_copilot, detect_prompt_injection
+from src.agent import (
+    _is_readonly_sql,
+    create_enterprise_copilot,
+    detect_prompt_injection,
+    invoke_sync,  # noqa: F401
+)
 
 REDTEAM_PATH = Path(__file__).parent / "eval" / "redteam_set.json"
 
@@ -108,7 +113,9 @@ def compiled_agent_no_llm(monkeypatch):
 def test_validation_redteam_all_blocked(compiled_agent_no_llm):
     results = []
     for row in _rows("validation"):
-        out = compiled_agent_no_llm.invoke({"messages": [HumanMessage(content=_input_text(row))]})
+        out = invoke_sync(
+            compiled_agent_no_llm, {"messages": [HumanMessage(content=_input_text(row))]}
+        )
         results.append((row, out.get("mode") == "rejected"))
     assert results, "no validation rows in redteam_set.json"
     _assert_family_rates(results)

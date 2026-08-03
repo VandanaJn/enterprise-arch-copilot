@@ -5,12 +5,15 @@ The session-scoped `built_test_data` fixture in conftest.py provides exactly
 that, isolated from the developer's real data directories.
 """
 
+import asyncio
+
 import pytest
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 
 from src.agent import (
     create_enterprise_copilot,
+    invoke_sync,
     query_sql_database,
     search_engineering_docs,
 )
@@ -25,19 +28,27 @@ def _final(result: dict) -> str:
 
 
 def _collect_tool_calls_from_stream(graph, inputs):
-    """Gather tool names from any node update in the graph stream."""
-    tool_calls = []
-    for chunk in graph.stream(inputs):
-        for _node_name, node_data in chunk.items():
-            if not isinstance(node_data, dict) or "messages" not in node_data:
-                continue
-            for msg in node_data["messages"]:
-                if hasattr(msg, "tool_calls") and msg.tool_calls:
-                    for tc in msg.tool_calls:
-                        tool_calls.append(tc["name"])
-                elif hasattr(msg, "name") and msg.name:
-                    tool_calls.append(msg.name)
-    return tool_calls
+    """Gather tool names from any node update in the graph stream.
+
+    The graph's nodes are async, so `.stream()` is unavailable; this drives
+    `astream` on a private loop the same way `invoke_sync` drives `ainvoke`.
+    """
+
+    async def _collect():
+        tool_calls = []
+        async for chunk in graph.astream(inputs):
+            for _node_name, node_data in chunk.items():
+                if not isinstance(node_data, dict) or "messages" not in node_data:
+                    continue
+                for msg in node_data["messages"]:
+                    if hasattr(msg, "tool_calls") and msg.tool_calls:
+                        for tc in msg.tool_calls:
+                            tool_calls.append(tc["name"])
+                    elif hasattr(msg, "name") and msg.name:
+                        tool_calls.append(msg.name)
+        return tool_calls
+
+    return asyncio.run(_collect())
 
 
 @pytest.mark.integration
@@ -108,7 +119,7 @@ def test_agent_hybrid_search(built_test_data):
     assert any("sql" in tool for tool in tool_calls)
     assert "search_engineering_docs" in tool_calls
 
-    result = agent.invoke(inputs)
+    result = invoke_sync(agent, inputs)
     final_answer = result["messages"][-1].content.lower()
     assert "alpha" in final_answer
     assert "mitigation" in final_answer or "runbook" in final_answer
@@ -127,7 +138,8 @@ def test_multi_turn_reset_after_injection(built_test_data):
     agent = create_enterprise_copilot(checkpointer=MemorySaver())
     cfg = _thread("reset-thread")
 
-    blocked = agent.invoke(
+    blocked = invoke_sync(
+        agent,
         {
             "messages": [
                 HumanMessage(
@@ -139,7 +151,8 @@ def test_multi_turn_reset_after_injection(built_test_data):
     )
     assert "blocked" in _final(blocked) or "prompt-injection" in _final(blocked)
 
-    answered = agent.invoke(
+    answered = invoke_sync(
+        agent,
         {"messages": [HumanMessage(content="Who owns ledger-service?")]},
         cfg,
     )
@@ -152,9 +165,9 @@ def test_multi_turn_followup_uses_context(built_test_data):
     agent = create_enterprise_copilot(checkpointer=MemorySaver())
     cfg = _thread("context-thread")
 
-    agent.invoke({"messages": [HumanMessage(content="Who owns checkout-service?")]}, cfg)
-    followup = agent.invoke(
-        {"messages": [HumanMessage(content="What is their on-call rotation?")]}, cfg
+    invoke_sync(agent, {"messages": [HumanMessage(content="Who owns checkout-service?")]}, cfg)
+    followup = invoke_sync(
+        agent, {"messages": [HumanMessage(content="What is their on-call rotation?")]}, cfg
     )
     assert "pagerduty-alpha" in _final(followup)
 
@@ -164,6 +177,8 @@ def test_thread_isolation(built_test_data):
     """Two threads don't share conversation state."""
     agent = create_enterprise_copilot(checkpointer=MemorySaver())
 
-    agent.invoke({"messages": [HumanMessage(content="Who owns ledger-service?")]}, _thread("t-a"))
+    invoke_sync(
+        agent, {"messages": [HumanMessage(content="Who owns ledger-service?")]}, _thread("t-a")
+    )
     state_b = agent.get_state(_thread("t-b"))
     assert not state_b.values.get("messages")

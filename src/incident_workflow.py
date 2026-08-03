@@ -33,6 +33,22 @@ class TriageResult(BaseModel):
     )
 
 
+class DocQueryPlan(BaseModel):
+    """Structured output from the runbook query-planning step.
+
+    Replaces a ReAct loop's first turn: the model proposes the searches in one
+    shot, they run in parallel, and the retrieved text goes straight to synthesis.
+    """
+
+    queries: list[str] = Field(
+        default_factory=list,
+        description="1-3 documentation search queries. Each must be a short sentence "
+        "combining the service name (or endpoint path) with the symptom and a word "
+        "like 'runbook', 'mitigation', or 'postmortem'. Bare two-word keyword "
+        "queries retrieve poorly. Do not repeat the same query twice.",
+    )
+
+
 def route_target_for_mode(
     mode: str | None,
 ) -> Literal["structured_agent", "general_agent", "decline_node"]:

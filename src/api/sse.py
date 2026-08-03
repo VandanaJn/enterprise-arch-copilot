@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
@@ -85,6 +86,16 @@ def chunk_text(chunk: Any) -> str:
     return ""
 
 
+def _safe_hook(hook: Callable | None, *args) -> None:
+    """Call an observability hook; a metrics failure must never break the stream."""
+    if hook is None:
+        return
+    try:
+        hook(*args)
+    except Exception:
+        logger.exception("stream observability hook failed")
+
+
 def _is_answer_chunk(chunk: Any) -> bool:
     """AI chunks only, and not the tool-call-argument chunks a ReAct step streams."""
     chunk_type = getattr(chunk, "type", "")
@@ -100,17 +111,28 @@ async def chat_event_stream(
     run_config: dict,
     on_complete: Callable[[str, list], None] | None = None,
     run_id: str | None = None,
+    on_node_complete: Callable[[str, float], None] | None = None,
+    on_first_token: Callable[[float], None] | None = None,
 ) -> AsyncIterator[dict]:
     """Yield SSE events for one chat turn.
 
     `on_complete(final_mode, all_messages)` fires before the done event; the
     observability layer uses it to record guardrail outcomes without this module
     depending on metrics.
+
+    `on_node_complete(node, seconds)` and `on_first_token(seconds)` are the latency
+    hooks, injected the same way. LangGraph emits an `updates` payload when a node
+    finishes, so the gap since the previous update is that node's wall clock
+    (graph overhead included), enough to attribute a slow turn to a step without
+    instrumenting the graph itself.
     """
     inputs = {"messages": [HumanMessage(content=message)]}
     all_messages: list = list(inputs["messages"])
     seen_msg_ids: set[str] = set()
     final_mode = ""
+    started = time.perf_counter()
+    node_started = started
+    first_token_seen = False
 
     try:
         async for stream_mode, payload in agent.astream(
@@ -122,9 +144,15 @@ async def chat_event_stream(
                     continue
                 text = chunk_text(chunk)
                 if text:
+                    if not first_token_seen:
+                        first_token_seen = True
+                        _safe_hook(on_first_token, time.perf_counter() - started)
                     yield token_event(text)
             elif stream_mode == "updates":
                 for node_name, update in (payload or {}).items():
+                    now = time.perf_counter()
+                    _safe_hook(on_node_complete, node_name, now - node_started)
+                    node_started = now
                     yield node_event(node_name)
                     if not isinstance(update, dict):
                         continue

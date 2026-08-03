@@ -12,7 +12,7 @@ import logging
 import time
 import uuid
 
-from prometheus_client import REGISTRY, Counter
+from prometheus_client import REGISTRY, Counter, Histogram
 from prometheus_fastapi_instrumentator import Instrumentator
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -25,6 +25,38 @@ GUARDRAIL_BLOCKS = Counter(
     "Requests blocked or declined by a guardrail layer",
     labelnames=("guardrail",),
 )
+
+# Per-node wall-clock, so a slow turn can be attributed to a step rather than to
+# "the agent". The incident path is a serial chain (triage -> structured_agent ->
+# runbook_agent -> synthesize) and each hop is at least one LLM round trip; without
+# this, /metrics/summary only shows the total. Measured at the stream boundary
+# (see chat_event_stream), which keeps src/agent.py free of metrics imports.
+# Buckets span a sub-second guardrail node to a multi-call ReAct sub-agent.
+NODE_DURATION = Histogram(
+    "eac_node_duration_seconds",
+    "Wall-clock duration of one graph node",
+    labelnames=("node",),
+    buckets=(0.05, 0.1, 0.25, 0.5, 1, 2, 4, 8, 15, 30, 60),
+)
+
+# Time to first token is the latency the user actually feels. On the incident path
+# only `synthesize` streams, so this is close to the total; on the general path the
+# ReAct agent streams much earlier. The gap between the two is the signal.
+TIME_TO_FIRST_TOKEN = Histogram(
+    "eac_time_to_first_token_seconds",
+    "Seconds from the start of a chat turn to the first answer token streamed",
+    buckets=(0.25, 0.5, 1, 2, 4, 8, 15, 30, 60),
+)
+
+
+def record_node_duration(node: str, seconds: float) -> None:
+    """Observe one completed graph node. Called from the stream's on_node_complete hook."""
+    NODE_DURATION.labels(node=node).observe(seconds)
+
+
+def record_time_to_first_token(seconds: float) -> None:
+    """Observe the first user-facing token of a turn. At most once per turn."""
+    TIME_TO_FIRST_TOKEN.observe(seconds)
 
 
 class JsonLogFormatter(logging.Formatter):
@@ -180,7 +212,56 @@ def metrics_summary() -> dict:
         "requests": {"total": total_requests, "by_endpoint": by_endpoint},
         "chat_latency": chat_latency,
         "overall_latency": overall_latency,
+        "node_latency": _node_latency(samples),
+        "time_to_first_token": _percentile_summary(samples, "eac_time_to_first_token_seconds"),
         "guardrail_blocks": guardrail_blocks,
+    }
+
+
+def _node_latency(samples: dict) -> list[dict]:
+    """Per-node timings, slowest average first, so the top row names the bottleneck.
+
+    `total_seconds` is carried alongside the average because they answer different
+    questions: the average finds the slow step, the total finds the step worth
+    optimizing when one node is called far more often than another.
+    """
+    counts = {
+        labels.get("node", ""): value
+        for labels, value in samples.get("eac_node_duration_seconds_count", [])
+    }
+    sums = {
+        labels.get("node", ""): value
+        for labels, value in samples.get("eac_node_duration_seconds_sum", [])
+    }
+    rows = [
+        {
+            "node": node,
+            "count": int(count),
+            "avg_seconds": round(sums.get(node, 0.0) / count, 3),
+            "total_seconds": round(sums.get(node, 0.0), 3),
+        }
+        for node, count in counts.items()
+        if count
+    ]
+    rows.sort(key=lambda r: (-r["avg_seconds"], r["node"]))
+    return rows
+
+
+def _percentile_summary(samples: dict, metric: str) -> dict | None:
+    """count / avg / p50 / p95 for an unlabeled histogram, or None if never observed."""
+    buckets = []
+    for labels, value in samples.get(f"{metric}_bucket", []):
+        le = labels.get("le", "")
+        buckets.append((float("inf") if le == "+Inf" else float(le), value))
+    count = next(iter(samples.get(f"{metric}_count", [])), (None, 0.0))[1]
+    total = next(iter(samples.get(f"{metric}_sum", [])), (None, 0.0))[1]
+    if not count:
+        return None
+    return {
+        "count": int(count),
+        "avg_seconds": round(total / count, 3),
+        "p50_seconds": _round3(_histogram_quantile(buckets, 0.50)),
+        "p95_seconds": _round3(_histogram_quantile(buckets, 0.95)),
     }
 
 
