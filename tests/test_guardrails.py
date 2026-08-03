@@ -19,10 +19,12 @@ from src.agent import (
     DECLINE_MESSAGE,
     EMPTY_INPUT_MESSAGE,
     PROMPT_INJECTION_MESSAGE,
+    _format_catalog_snapshot,
     _is_readonly_sql,
     close_connections,
     create_enterprise_copilot,
     detect_prompt_injection,
+    get_catalog_snapshot,
     query_incidents,
     query_sql_database,
 )
@@ -98,6 +100,118 @@ def test_is_readonly_sql_allows_select_and_with(query):
 )
 def test_is_readonly_sql_rejects_writes_and_stacked(query):
     assert _is_readonly_sql(query) is False
+
+
+# --- catalog snapshot --------------------------------------------------------
+
+
+def test_format_catalog_snapshot_renders_services_and_endpoints():
+    services = [("checkout-service", "Team Alpha", "3.2.0", "pagerduty-alpha", "tier-0", 0, "Go")]
+    endpoints = [("POST", "/api/v1/checkout", "checkout-service")]
+
+    snapshot = _format_catalog_snapshot(services, endpoints)
+
+    # Every field the incident path asks for is present without a SQL round trip.
+    assert "checkout-service" in snapshot
+    assert "Team Alpha" in snapshot
+    assert "pagerduty-alpha" in snapshot
+    assert "tier-0" in snapshot
+    assert "POST /api/v1/checkout" in snapshot
+    # The endpoint resolves to its service inline: that mapping is the lookup the
+    # structured agent otherwise spends two LLM round trips discovering.
+    endpoint_line = next(ln for ln in snapshot.splitlines() if "/api/v1/checkout" in ln)
+    assert "checkout-service" in endpoint_line
+
+
+def test_format_catalog_snapshot_handles_empty_tables():
+    assert _format_catalog_snapshot([], [], []) == ""
+
+
+def test_format_catalog_snapshot_renders_recent_incidents():
+    # Incident history is what a brief needs to answer "has this broken before?".
+    incidents = [("SEV-1", "2024-11-29T14:02:00Z", "checkout-service", "504 spike", "PM-2024-001")]
+    snapshot = _format_catalog_snapshot([], [], incidents)
+
+    assert "SEV-1" in snapshot
+    assert "checkout-service" in snapshot
+    assert "504 spike" in snapshot
+    assert "PM-2024-001" in snapshot
+
+
+def test_catalog_snapshot_includes_incident_history(seeded_sqlite):
+    snapshot = get_catalog_snapshot()
+    assert "Recent incidents" in snapshot
+    assert "SEV-" in snapshot
+
+
+def test_catalog_snapshot_limits_incident_rows(seeded_sqlite, monkeypatch):
+    # Incidents grow without bound in a real deployment, unlike the service catalog.
+    monkeypatch.setenv("EAC_INCIDENTS_SNAPSHOT_LIMIT", "2")
+    close_connections()
+    snapshot = get_catalog_snapshot()
+    assert "Recent incidents (2)" in snapshot
+
+
+def test_catalog_snapshot_reads_the_db_once(seeded_sqlite, monkeypatch):
+    builds = []
+    real_build = agent_module._build_catalog_snapshot
+
+    def counting_build():
+        builds.append(1)
+        return real_build()
+
+    monkeypatch.setattr(agent_module, "_build_catalog_snapshot", counting_build)
+
+    first = get_catalog_snapshot()
+    second = get_catalog_snapshot()
+
+    assert "checkout-service" in first
+    assert first == second
+    assert len(builds) == 1  # cached; the DB is read-only and built by `make setup`
+
+
+def test_close_connections_clears_catalog_snapshot(seeded_sqlite):
+    get_catalog_snapshot()
+    assert agent_module._catalog_snapshot is not None
+    close_connections()
+    assert agent_module._catalog_snapshot is None
+
+
+def test_catalog_snapshot_falls_back_to_empty_when_over_budget(seeded_sqlite, monkeypatch):
+    # A catalog too large to sit in every prompt must degrade to the SQL tools,
+    # not silently blow up the token bill on a bigger deployment.
+    monkeypatch.setenv("EAC_CATALOG_MAX_CHARS", "10")
+    assert get_catalog_snapshot() == ""
+
+
+def test_catalog_snapshot_rebuilds_after_ttl(seeded_sqlite, monkeypatch):
+    builds = []
+    real_build = agent_module._build_catalog_snapshot
+    monkeypatch.setattr(
+        agent_module, "_build_catalog_snapshot", lambda: (builds.append(1), real_build())[1]
+    )
+
+    get_catalog_snapshot()
+    assert len(builds) == 1
+
+    # Age the cache past its TTL; the next read re-queries.
+    monkeypatch.setattr(agent_module, "_catalog_snapshot_at", -10_000.0)
+    get_catalog_snapshot()
+    assert len(builds) == 2
+
+
+def test_catalog_snapshot_ttl_zero_never_expires(seeded_sqlite, monkeypatch):
+    monkeypatch.setenv("EAC_CATALOG_TTL_SECONDS", "0")
+    builds = []
+    real_build = agent_module._build_catalog_snapshot
+    monkeypatch.setattr(
+        agent_module, "_build_catalog_snapshot", lambda: (builds.append(1), real_build())[1]
+    )
+
+    get_catalog_snapshot()
+    monkeypatch.setattr(agent_module, "_catalog_snapshot_at", -10_000.0)
+    get_catalog_snapshot()
+    assert len(builds) == 1
 
 
 # --- query_sql_database tool -------------------------------------------------
